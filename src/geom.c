@@ -4,6 +4,7 @@
 #include <string.h>
 #include <assert.h>
 #include "geom.h"
+#include "util.h"
 
 grist_coord* grist_coord_new(void) {
     grist_coord* coord = malloc(sizeof(grist_coord));
@@ -122,6 +123,7 @@ grist_point* grist_point_new3(double x, double y, double z) {
 }
 
 void grist_point_del(grist_point* point) {
+    assert(point);
     free(point->coord);
     point->coord = NULL;
     free(point);
@@ -166,11 +168,17 @@ char* grist_point_ser(grist_point* point, size_t* sz) {
     size_t newsz = sizeof(grist_coord);
     char* serialized = malloc(newsz);
     assert(serialized);
-    memcpy(serialized, &point->coord->x, sizeof(double));
-    size_t offset = sizeof(double);
-    memcpy((serialized+offset), &point->coord->y, sizeof(double));
-    offset += sizeof(double);
-    memcpy((serialized+offset), &point->coord->z, sizeof(double));
+    uint64_t x;
+    uint64_t y;
+    uint64_t z;
+    x = htonll(dtoll(point->coord->x));
+    y = htonll(dtoll(point->coord->y));
+    z = htonll(dtoll(point->coord->z));
+    memcpy(serialized, &x, sizeof(uint64_t));
+    size_t offset = sizeof(uint64_t);
+    memcpy((serialized+offset), &y, sizeof(uint64_t));
+    offset += sizeof(uint64_t);
+    memcpy((serialized+offset), &z, sizeof(uint64_t));
     *sz = newsz;
     return serialized;
 }
@@ -180,12 +188,12 @@ grist_point* grist_point_unser(const char* buf, size_t bufsz) {
     if(bufsz != sersz) {
         return NULL;
     }
-    double x;
-    double y;
-    double z;
-    memcpy(&x, buf, sizeof(double));
-    memcpy(&y, (buf+sizeof(double)), sizeof(double));
-    memcpy(&z, (buf+(2*sizeof(double))), sizeof(double));
-    grist_point* point = grist_point_new3(x, y, z);
+    uint64_t x;
+    uint64_t y;
+    uint64_t z;
+    memcpy(&x, buf, sizeof(uint64_t));
+    memcpy(&y, (buf+sizeof(uint64_t)), sizeof(uint64_t));
+    memcpy(&z, (buf+(2*sizeof(uint64_t))), sizeof(uint64_t));
+    grist_point* point = grist_point_new3(lltod(ntohll(x)), lltod(ntohll(y)), lltod(ntohll(z)));
     return point;
 }

@@ -3,7 +3,9 @@
 #include <stdio.h>
 #include <string.h>
 #include <stdint.h>
+#include <arpa/inet.h>
 #include "geom.h"
+#include "util.h"
 
 void printcoord(grist_coord* coord) {
     printf("coord(%f,%f,%f)\n", coord->x, coord->y, coord->z);
@@ -49,6 +51,8 @@ int main(int argc, char** argv) {
     //char* serd = grist_point_ser(point, &sersz);
     //grist_point* point2 = grist_point_unser(serd, sersz);
     //printpoint(point2);
+    
+    printpoint(point);
 
     pid_t pid = getpid();
     char outfilename[256];
