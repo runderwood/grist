@@ -68,6 +68,30 @@ grist_dict* grist_dict_new(void) {
     return d;
 }
 
+int grist_dict_lkup(grist_dict* d, const void* k, size_t ksz, size_t* fidx) {
+    size_t idx;
+    uint64_t h = d->hash(k, ksz);
+    uint64_t p = h;
+    size_t j = 0;
+    idx = h % d->mask;
+    while(j < d->cabsz) {
+        if(d->cab[idx] != NULL) {
+            if(!d->kcmp(d->cab[idx]->k, d->cab[idx]->ksz, k, ksz)) {
+                *fidx = idx;
+                return 1;
+            }  
+        } else {
+            *fidx = idx;
+            return -1;
+        }
+        j++;
+        idx = ((idx << 2) + idx + p + 1) & d->mask;
+        p = p  >> 5;
+    }
+    return 0;
+}
+
+
 size_t grist_dict_resize(grist_dict* d, int mult) {
     assert(d->cabsz > 0);
     size_t oldsz = d->cabsz;
@@ -85,68 +109,68 @@ size_t grist_dict_resize(grist_dict* d, int mult) {
     d->empty = newsz;
     d->mask = newsz-1;
     assert(d->cab);
+    size_t idx;
+    int repl;
     for(i=0; i<oldsz; i++) {
         if(oldtab[i] != NULL) {
-            grist_dict_put(d, oldtab[i]);
-            grist_dict_entry_del(oldtab[i]);
-            oldtab[i] = NULL;
+            repl = grist_dict_lkup(d, oldtab[i]->k, oldtab[i]->ksz, &idx) > 0 ? 1 : 0;
+            grist_dict_put4(d, oldtab[i], idx, repl);
+            //grist_dict_entry_del(oldtab[i]);
+            //oldtab[i] = NULL;
         }
     }
     free(oldtab);
-    printf("resized dict from %zu to %zu.\n", oldsz, newsz);
     return newsz;
 }
 
 void grist_dict_del(grist_dict* d) {
     size_t i;
-    for(i=0; i<d->cabsz; i++)
-        if(d->cab[i] != NULL) 
+    for(i=0; i<d->cabsz; i++) {
+        if(d->cab[i] != NULL) {
             grist_dict_entry_del(d->cab[i]);
+            d->cab[i] = NULL;
+        }
+    }
     free(d->cab);
     free(d);
     return;
 }
 
-int grist_dict_put(grist_dict* d, grist_dict_entry* e) {
-    size_t idx;
-    uint64_t h = d->hash(e->k, e->ksz);
-    uint64_t p = h;
-    size_t j = 0;
-    idx = h % d->mask;
-    while(j < d->cabsz) {
-        if(d->cab[idx] != NULL) {
-            if(!d->kcmp(d->cab[idx]->k, d->cab[idx]->ksz, e->k, e->ksz)) {
-                printf("replacing %X\n", *((int*)e->k));
-                d->cab[idx]->v = realloc(d->cab[idx]->v, e->vsz);
-                assert(d->cab[idx]->v);
-                memcpy(d->cab[idx]->v, e->v, e->vsz);
-                d->cab[idx]->vsz = e->vsz;
-                printf("replaced %zu: %X\n", idx, *((int*)e->k));
-                return 1;
-            }  
-        } else {
-            grist_dict_entry* e2 = grist_dict_entry_new4(e->k, e->ksz, e->v, e->vsz);
-            d->cab[idx] = e2;
-            d->empty--;
-            printf("inserted %zu: %X (%zu)\n", idx, *((int*)e->k), d->cabsz - d->empty);
-            return 1;
-        }
-        j++;
-        idx = ((idx << 2) + idx + p + 1) & d->mask;
-        p = p  >> 5;
+int grist_dict_put(grist_dict* d, const void *k, size_t ksz, const void* v, size_t vsz, size_t idx, int repl) {
+    if(repl) {
+        assert(d->cab[idx] != NULL);
+        d->cab[idx]->v = realloc(d->cab[idx]->v, vsz);
+        assert(d->cab[idx]->v);
+        memcpy(d->cab[idx]->v, v, vsz);
+        d->cab[idx]->vsz = vsz;
+    } else {
+        d->cab[idx] = grist_dict_entry_new4(k, ksz, v, vsz);
+        d->empty--;
     }
-    printf("failed.\n");
-    return 0;
+    return 1;
 }
 
-int grist_dict_set(grist_dict* d, const void* k, size_t ksz, void* v, size_t vsz) {
-    grist_dict_entry* e = grist_dict_entry_new4(k, ksz, v, vsz);
-    if(((double)d->empty/(double)d->cabsz) < 0.333) {
-        printf("resize...\n");
-        grist_dict_resize(d, 4);
+int grist_dict_put4(grist_dict* d, grist_dict_entry* e, size_t idx, int repl) {
+    if(repl) {
+        assert(d->cab[idx] != NULL);
+        // reuse del entries here
+        grist_dict_entry_del(d->cab[idx]);
+        d->cab[idx] = e;
+    } else {
+        d->cab[idx] = e;
+        d->empty--;
     }
-    int ret = grist_dict_put(d, e);
-    grist_dict_entry_del(e);
+    return 1;
+}
+
+int grist_dict_set(grist_dict* d, const void* k, size_t ksz, const void* v, size_t vsz) {
+    if(((double)d->empty/(double)d->cabsz) < 0.333) {
+        grist_dict_resize(d, 8);
+    }
+    size_t idx;
+    int repl = grist_dict_lkup(d, k, ksz, &idx);
+    repl = repl == 1 ? 1 : 0;
+    int ret = grist_dict_put(d, k, ksz, v, vsz, idx, repl);
     return ret;
 }
 

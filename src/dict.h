@@ -30,9 +30,10 @@ grist_dict_entry* grist_dict_entry_new4(const void* k, size_t ksz, const void* v
 void grist_dict_entry_del(grist_dict_entry* e);
 grist_dict* grist_dict_new(void);
 void grist_dict_del(grist_dict* d);
-int grist_dict_put(grist_dict* d, grist_dict_entry* e);
+int grist_dict_put(grist_dict* d, const void* k, size_t ksz, const void* v, size_t vsz, size_t idx, int repl);
+int grist_dict_put4(grist_dict* d, grist_dict_entry* e, size_t idx, int repl);
 void* grist_dict_get(grist_dict* d, const void* k, size_t ksz, size_t* vsz);
-int grist_dict_set(grist_dict* d, const void* k, size_t ksz, void* v, size_t vsz);
+int grist_dict_set(grist_dict* d, const void* k, size_t ksz, const void* v, size_t vsz);
 size_t grist_dict_resize(grist_dict* d, int mult);
 
 
