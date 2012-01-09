@@ -6,6 +6,7 @@
 #include <arpa/inet.h>
 #include "geom.h"
 #include "util.h"
+#include "dict.h"
 
 void printcoord(grist_coord* coord) {
     printf("coord(%f,%f,%f)\n", coord->x, coord->y, coord->z);
@@ -78,6 +79,61 @@ int main(int argc, char** argv) {
     grist_point_del(point);
     grist_point_del(point2);
 
+    free(raw);
+    free(serd);
+
     point = NULL;
+
+    char s1[4] = "reed";
+    char s2[4] = "REED";
+    printf("hashed %.*s: %llu\n", 4, s1, (long long unsigned int)djb_hash((uint8_t*)s1, 4));
+    printf("hashed %.*s: %llu\n", 4, s2, (long long unsigned int)djb_hash((uint8_t*)s2, 4));
+
+    grist_dict* d = grist_dict_new();
+
+    int k = 0x1234;
+    size_t ksz = sizeof(int);
+    int v = 0x1234;
+    size_t vsz = sizeof(int);
+    grist_dict_entry* e = grist_dict_entry_new4(&k, ksz, &v, vsz);
+    grist_dict_put(d, e);
+    grist_dict_entry_del(e);
+    k = 0x1357;
+    v = 0x1357;
+    grist_dict_set(d, &k, ksz, &v, vsz);
+    k = 0x1337;
+    v = 0x1337;
+    grist_dict_set(d, &k, ksz, &v, vsz);
+    k = 0x7113;
+    v = 0x7113;
+    grist_dict_set(d, &k, ksz, &v, vsz);
+    k = 0xff00;
+    v = 0xff00;
+    grist_dict_set(d, &k, ksz, &v, vsz);
+    k = 0xdead;
+    v = 0xbeef;
+    grist_dict_set(d, &k, ksz, &v, vsz);
+    k = 0xdeaf;
+    v = 0xbeef;
+    grist_dict_set(d, &k, ksz, &v, vsz);
+    k = 0xdeaa;
+    v = 0xbeef;
+    grist_dict_set(d, &k, ksz, &v, vsz);
+    k = 0xbead;
+    v = 0xbeef;
+    grist_dict_set(d, &k, ksz, &v, vsz);
+
+    size_t v2sz;
+    k = 0xdead;
+    void* v2 = grist_dict_get(d, &k, ksz, &v2sz);
+    printf("got: %04X\n", *((int*)v2));
+    free(v2);
+    v2 = NULL;
+    k = 0x1337;
+    v2 = grist_dict_get(d, &k, ksz, &v2sz);
+    printf("got: %04X\n", *((int*)v2));
+
+    free(v2);
+    grist_dict_del(d);
 
 }
