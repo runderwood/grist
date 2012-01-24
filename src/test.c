@@ -99,7 +99,7 @@ int main(int argc, char** argv) {
     size_t vsz = sizeof(int);
 
     int i = 0;
-    int max = 10000;
+    int max = 100000;
 
     for(i=0; i<max; i++) {
         k = i;

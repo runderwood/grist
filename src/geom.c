@@ -194,6 +194,8 @@ grist_point* grist_point_unser(const char* buf, size_t bufsz) {
     memcpy(&x, buf, sizeof(uint64_t));
     memcpy(&y, (buf+sizeof(uint64_t)), sizeof(uint64_t));
     memcpy(&z, (buf+(2*sizeof(uint64_t))), sizeof(uint64_t));
-    grist_point* point = grist_point_new3(lltod(ntohll(x)), lltod(ntohll(y)), lltod(ntohll(z)));
+    grist_point* point = grist_point_new3(
+        lltod(ntohll(x)), lltod(ntohll(y)), lltod(ntohll(z))
+    );
     return point;
 }

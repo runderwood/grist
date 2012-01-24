@@ -21,9 +21,15 @@ typedef struct grist_coordarr_s {
 } grist_coordarr;
 
 typedef struct grist_point_s {
-    int geom_type;    
+    uint8_t geom_type;    
     grist_coord* coord;
 } grist_point;
+
+/*typedef struct grist_geom_s {
+    uint8_t geom_type;
+    void* geom;
+    grist_dict* attr;
+} grist_geom;*/
 
 grist_coord* grist_coord_new(void);
 grist_coord* grist_coord_new2(double x, double y);
