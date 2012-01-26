@@ -7,6 +7,7 @@
 #include "geom.h"
 #include "util.h"
 #include "dict.h"
+#include <math.h>
 
 void printcoord(grist_coord* coord) {
     printf("coord(%f,%f,%f)\n", coord->x, coord->y, coord->z);
@@ -91,7 +92,7 @@ int main(int argc, char** argv) {
 
     */
 
-    grist_dict* d = grist_dict_new();
+    /*grist_dict* d = grist_dict_new();
 
     int k = 0;
     size_t ksz = sizeof(int);
@@ -116,6 +117,39 @@ int main(int argc, char** argv) {
 
     free(v2);
     printf("d->sz: %zu\n", d->cabsz);
-    grist_dict_del(d);
+    grist_dict_del(d);*/
+
+    grist_linestr* l = grist_linestr_new();
+    grist_linestr_addxyz(l, 0.0, 1.0, NAN);
+    grist_linestr_addxyz(l, 1.0, 2.0, NAN);
+    grist_linestr_addxyz(l, 2.0, 3.0, NAN);
+    grist_linestr_addxyz(l, 3.0, 4.0, NAN);
+    grist_linestr_addxyz(l, 0.0, 1.0, NAN);
+
+    printf("linestr_sz: %d\n", grist_linestr_sz(l));
+
+    if(grist_linestr_isring(l)) {
+        printf("ring!\n");
+    } else printf("not a ring.\n");
+
+    size_t lssersz;
+    char* lsser = grist_linestr_ser(l, &lssersz);
+
+    printf("ser ls sz: %ld\n", lssersz);
+
+    grist_linestr* l2 = grist_linestr_unser(lsser, lssersz);
+
+    if(!l2) {
+        printf("could not unserialize.\n");
+        return EXIT_FAILURE;
+    }
+
+    printf("linestr2_sz: %d\n", grist_linestr_sz(l2));
+
+    if(grist_linestr_isring(l2)) {
+        printf("2 ring!\n");
+    } else printf("2 not a ring.\n");
+
+    grist_linestr_del(l);
 
 }
