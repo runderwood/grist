@@ -1,0 +1,6 @@
+- rework geom.c
+    - generic geom struct
+        -- "type" uint_8
+        -- "coords" grist_coordarr*
+- (un)serialization
+    - calloc contiguous blocks and memcpy for performance?
