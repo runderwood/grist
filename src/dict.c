@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <assert.h>
 #include "dict.h"
+#include "util.h"
 
 #include <stdio.h>
 
@@ -196,4 +197,52 @@ void* grist_dict_get(grist_dict* d, const void* sk, size_t sksz, size_t* vsz) {
     return NULL;
 }
 
+char* grist_dict_ser(grist_dict* d, size_t* sz) {
+    *sz = (d->cabsz-d->empty) * 2 * sizeof(uint64_t);
+    size_t i;
+    grist_dict_entry* e;
+    for(i=0; i<d->cabsz; i++) {
+        e = d->cab[i];
+        if(!e) continue;
+        *sz += e->ksz + e->vsz;
+    }
+    e = NULL;
+    char* ser = malloc(*sz);
+    assert(ser);
+    size_t offset = 0;
+    uint64_t ksz;
+    uint64_t vsz;
+    for(i=0; i<d->cabsz; i++) {
+        e = d->cab[i];
+        if(!e) continue;
+        ksz = htonll(e->ksz);
+        vsz = htonll(e->vsz);
+        memcpy(ser+offset, &ksz, sizeof(uint64_t));
+        offset += sizeof(uint64_t);
+        memcpy(ser+offset, &vsz, sizeof(uint64_t));
+        offset += sizeof(uint64_t);
+        memcpy(ser+offset, e->k, e->ksz);
+        offset += e->ksz;
+        memcpy(ser+offset, e->v, e->vsz);
+        offset += e->vsz;
+    }
+    return ser;
+}
 
+grist_dict* grist_dict_unser(const char* buf, size_t bufsz) {
+    size_t offset = 0;
+    uint64_t ksz;
+    uint64_t vsz;
+    grist_dict* d = grist_dict_new();
+    while(offset < (bufsz-16)) {
+        memcpy(&ksz, buf+offset, 8);
+        ksz = ntohll(ksz);
+        offset += 8;
+        memcpy(&vsz, buf+offset, 8);
+        vsz = ntohll(vsz);
+        offset += 8;
+        grist_dict_set(d, buf+offset, ksz, buf+offset+ksz, vsz);
+        offset += ksz+vsz;
+    }
+    return d;
+}

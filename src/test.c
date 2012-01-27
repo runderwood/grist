@@ -8,6 +8,7 @@
 #include "util.h"
 #include "dict.h"
 #include <math.h>
+#include "db.h"
 
 void printcoord(grist_coord* coord) {
     printf("coord(%f,%f,%f)\n", coord->x, coord->y, coord->z);
@@ -150,6 +151,55 @@ int main(int argc, char** argv) {
         printf("2 ring!\n");
     } else printf("2 not a ring.\n");
 
+    //free(lsser);
+    //lsser = NULL;
+
     grist_linestr_del(l);
+    grist_linestr_del(l2);
+
+    pid_t pid = getpid();
+    char outfilename[256];
+    sprintf(outfilename, "test-%d.grist", pid);
+    grist_db* db = grist_db_new();
+    printf("created db.\n");
+    grist_db_open(db, outfilename, strlen(outfilename));
+    printf("opened db: %s\n", outfilename);
+
+
+    grist_point* p = grist_point_new3(0.0, 1.0, 3.0);
+
+    // serialize point
+    size_t serpsz;
+    char* serp = grist_point_ser(p, &serpsz);
+
+    grist_dict* d = grist_dict_new();
+    grist_dict_set(d, "hello", 5, "world", 5);
+    grist_dict_set(d, "goodbye", 7, "world", 5);
+
+    // serialize dict
+    size_t serdsz;
+    char* serd = grist_dict_ser(d, &serdsz);
+
+    printf("serialized point and dict: %d + %d = %d\n", serpsz, serdsz, serpsz+serdsz);
+
+    grist_dict* d2 = grist_dict_unser(serd, serdsz);
+
+    printf("unserialized dict with %d keys.\n", d2->cabsz - d2->empty);
+
+    size_t vsz;
+    char* val = grist_dict_get(d2, "hello", 5, &vsz);
+
+    char* valstr = malloc(vsz+1);
+    memcpy(valstr, val, vsz);
+    valstr[vsz] = '\0';
+    printf("got %s for key 'hello'.\n", valstr);
+    
+    grist_db_close(db);
+    printf("closed db.\n");
+    grist_db_del(db);
+    printf("deld db.\n");
+    db = NULL;
+
+    return EXIT_SUCCESS;
 
 }

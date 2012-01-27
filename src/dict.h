@@ -36,5 +36,7 @@ void* grist_dict_get(grist_dict* d, const void* k, size_t ksz, size_t* vsz);
 int grist_dict_set(grist_dict* d, const void* k, size_t ksz, const void* v, size_t vsz);
 size_t grist_dict_resize(grist_dict* d, int mult);
 
+char* grist_dict_ser(grist_dict* d, size_t* sz);
+grist_dict* grist_dict_unser(const char* buf, size_t bufsz);
 
 #endif
