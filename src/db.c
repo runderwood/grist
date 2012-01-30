@@ -38,18 +38,19 @@ int grist_db_open(grist_db* db, const char* fnm, size_t fnmsz) {
     int init = 0;
     if(access(fnm_, W_OK)) init = 1;
     db->file = fopen(fnm_, "w+"); // be smarter about this...fcntl, etc.
+    // TODO: just lock the file, man. (exclusive)
     free(fnm_);
     fnm_ = NULL;
     if(!db->file) return -1;
     db->curr = 0;
     if(init) {
-        printf("init\n");
         return grist_db_init(db);
     }
     return 0;
 }
 
 int grist_db_close(grist_db* db) {
+    // TODO: unlock file
     return fclose(db->file) == EOF;
 }
 

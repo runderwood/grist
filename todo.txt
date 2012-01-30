@@ -4,3 +4,7 @@
         -- "coords" grist_coordarr*
 - (un)serialization
     - calloc contiguous blocks and memcpy for performance?
+
+== indexing ==
+
+- bitmap indexing of attributes?
