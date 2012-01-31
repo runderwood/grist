@@ -7,6 +7,7 @@
 #include <tchdb.h>
 #include <geos_c.h>
 #include "util.h"
+#include "db.h"
 
 #define GRISTMGR_DEBUG 1
 
@@ -232,66 +233,32 @@ static int doput(char* fname, char* k, char* wkt) {
 }
 
 static int doget(char* fname, char* k) {
-    printf("doget\n");
-
-    TCHDB* hdb = tchdbnew();
-    if(!tchdbopen(hdb, fname, HDBOWRITER)) {
-        tchdbdel(hdb);
-        report(GRISTMGR_ERR, "could not open db: %s", fname);
-        exit(EXIT_FAILURE);
-    }
-
-    int vsz;
-    void* v = tchdbget(hdb, k, strlen(k), &vsz);
-    if(!v) {
-        report(GRISTMGR_ERR, "could not get rec %s: %s", k, tchdberrmsg(tchdbecode(hdb)));
-        tchdbclose(hdb);
-        tchdbdel(hdb);
-        exit(EXIT_FAILURE);
-    }
-
-    uint64_t pgsz;
-    memcpy(&pgsz, v, sizeof(uint64_t));
-    uint64_t mdsz;
-    memcpy(&mdsz, v+sizeof(uint64_t), sizeof(uint64_t));
-
-    pgsz = ntohll(pgsz);
-    mdsz = ntohll(mdsz);
-
-    GEOSWKBReader* r = GEOSWKBReader_create();
-
-    GEOSGeometry* g = GEOSWKBReader_read(r, v+(2*sizeof(uint64_t)), pgsz);
-    if(!g) {
-        report(GRISTMGR_ERR, "could not unpack geometry %s", k);
-        tchdbclose(hdb);
-        tchdbdel(hdb);
+    
+    grist_db* db = grist_db_new();
+    if(!grist_db_open(db, fname, HDBOREADER)) {
         abort();
-        exit(EXIT_FAILURE);
     }
 
-    TCMAP* map = tcmapload(v+(2*sizeof(uint64_t))+pgsz, mdsz);
-    if(!map) {
-        report(GRISTMGR_ERR, "could not unpack attributes");
-        tchdbclose(hdb);
-        tchdbdel(hdb);
-        exit(EXIT_FAILURE);
+    grist_feature* f = grist_db_get(db, k, strlen(k));
+    if(!f) {
+        abort();
     }
 
     GEOSWKTWriter* w = GEOSWKTWriter_create();
-    char* wkt = GEOSWKTWriter_write(w, g);
+    char* wkt = GEOSWKTWriter_write(w, f->geom);
     if(!wkt) {
         abort();
     }
 
     printf("%s @ %s\n", k, wkt);
 
-    tcmapiterinit(map);
+    tcmapiterinit(f->attr);
     const char* mk;
     int mksz;
     const char* mv;
     int mvsz;
-    while((mk = tcmapiternext(map, &mksz))) {
-        mv = tcmapget(map, mk, mksz, &mvsz);
+    while((mk = tcmapiternext(f->attr, &mksz))) {
+        mv = tcmapget(f->attr, mk, mksz, &mvsz);
         printf("%s:\n\t%s\n", mk, mv);
     }
 
