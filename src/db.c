@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <unistd.h>
 #include <string.h>
+#include <fcntl.h>
 #include "db.h"
 
 grist_db* grist_db_new(void) {
@@ -32,26 +33,9 @@ int grist_db_init(grist_db* db) {
 }
 
 int grist_db_open(grist_db* db, const char* fnm, size_t fnmsz) {
-    char* fnm_ = malloc(fnmsz+1);
-    memcpy(fnm_, fnm, fnmsz);
-    fnm_[fnmsz] = '\0';
-    int init = 0;
-    if(access(fnm_, W_OK)) init = 1;
-    db->file = fopen(fnm_, "w+"); // be smarter about this...fcntl, etc.
-    // TODO: just lock the file, man. (exclusive)
-    free(fnm_);
-    fnm_ = NULL;
-    if(!db->file) return -1;
-    db->curr = 0;
-    if(init) {
-        return grist_db_init(db);
-    }
-    return 0;
 }
 
 int grist_db_close(grist_db* db) {
-    // TODO: unlock file
-    return fclose(db->file) == EOF;
 }
 
 void grist_db_del(grist_db* db) {

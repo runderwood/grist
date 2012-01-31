@@ -7,7 +7,8 @@
 
 #define GRIST_DB_HDRSZ 128
 #define GRIST_DB_VER 0x01
-#define GRIST_DB_MAGIC 0x4752495354404040
+#define GRIST_DB_TYP 0x01
+#define GRIST_DB_MAGIC "GrIsT@@@"
 #define GRIST_DB_MAGICSZ 8
 
 typedef struct grist_db_s {
