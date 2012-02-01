@@ -7,7 +7,7 @@
 #include "db.h"
 #include "feature.h"
 
-grist_db* gristdb_new(void) {
+grist_db* grist_db_new(void) {
     grist_db* db = malloc(sizeof(grist_db));
     db->hdb = tchdbnew();
     return db;
@@ -18,7 +18,7 @@ bool grist_db_open(grist_db* db, const char* fname, int omode) {
 }
 
 bool grist_db_close(grist_db* db) {
-    return tchdbclose(db);
+    return tchdbclose(db->hdb);
 }
 
 void grist_db_del(grist_db* db) {
@@ -29,15 +29,15 @@ void grist_db_del(grist_db* db) {
     return;
 }
 
-bool grist_db_put(grist_db* db, const void* kbuf, grist_feature* f) {
+bool grist_db_put(grist_db* db, const void* kbuf, int ksiz, grist_feature* f) {
 
-    size_t packedsz;
-    char* packed = gristmgr_pack_rec(wkt, map, &packedsz);
+    int packedsz;
+    char* packed = grist_db_packrec(db, f, &packedsz);
     if(!packed) {
         return false;
     }
 
-    if(!tchdbput(hdb, k, strlen(k), packed, packedsz)) {
+    if(!tchdbput(db->hdb, kbuf, ksiz, packed, packedsz)) {
         return false;
     }
 
@@ -46,7 +46,9 @@ bool grist_db_put(grist_db* db, const void* kbuf, grist_feature* f) {
 
 grist_feature* grist_db_get(grist_db* db, const void* kbuf, int ksiz) {
     
-    void* v = tchdbget(hdb, k, strlen(k), &vsz);
+    int vsz;
+
+    void* v = tchdbget(db->hdb, kbuf, ksiz, &vsz);
     if(!v) {
         return NULL;
     }
@@ -122,4 +124,12 @@ void* grist_db_packrec(grist_db* db, grist_feature* f, int* sz) {
 
     return packed;
 
+}
+
+bool grist_db_iterinit(grist_db* db) {
+    return tchdbiterinit(db->hdb);
+}
+
+void* grist_db_iternext(grist_db* db, int* szp) {
+    return tchdbiternext(db->hdb, szp);
 }

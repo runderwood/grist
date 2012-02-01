@@ -37,11 +37,8 @@ void usage();
 int parseopts(int argc, char** argv);
 static int docreate(char* fname);
 static int dostatus(char* fname);
-static int doput(char* fname, char* key, char* wktgeom);
+static int doput(char* fname, char* key, char* wktgeom, char* attrs);
 static int doget(char* fname, char* key);
-
-static char* gristmgr_pack_rec(char* wkt, TCMAP* map, size_t* sz);
-
 
 int main(int argc, char** argv) {
     
@@ -68,7 +65,7 @@ int main(int argc, char** argv) {
             dostatus(fname);
             break;
         case GRISTMGR_PUTX:
-            doput(fname, rec_key, rec_geom);
+            doput(fname, rec_key, rec_geom, "");
             break;
         case GRISTMGR_GETX:
             doget(fname, rec_key);
@@ -195,44 +192,52 @@ static int dostatus(char* fname) {
     return 0;
 }
 
-static int doput(char* fname, char* k, char* wkt) {
+static int doput(char* fname, char* k, char* wkt, char* attrs) {
 
-    TCHDB* hdb = tchdbnew();
-    if(!tchdbopen(hdb, fname, HDBOWRITER)) {
-        tchdbdel(hdb);
+    if(!k || !wkt || !attrs) {
+        report(GRISTMGR_ERR, "missing arg");
+        exit(EXIT_FAILURE);
+    }
+
+    grist_db* db = grist_db_new();
+
+    if(!grist_db_open(db, fname, HDBOWRITER)) {
+        grist_db_del(db);
         report(GRISTMGR_ERR, "could not open db: %s", fname);
         exit(EXIT_FAILURE);
     }
 
-    TCMAP* map = tcmapnew();
-    tcmapput(map, "hello", 5, "world", 5);
+    GEOSWKTReader* r = GEOSWKTReader_create();
+    GEOSGeometry* g = GEOSWKTReader_read(r, wkt);
 
-    size_t packedsz;
-    char* packed = gristmgr_pack_rec(wkt, map, &packedsz);
-    if(!packed) {
-        tchdbclose(hdb);
-        tchdbdel(hdb);
-        report(GRISTMGR_ERR, "could not pack record: %s", k);
+    if(!g) {
+        report(GRISTMGR_ERR, "invalid geometry");
         exit(EXIT_FAILURE);
     }
 
-    if(!tchdbput(hdb, k, strlen(k), packed, packedsz)) {
-        report(GRISTMGR_ERR, "could not update %s: %s", k, tchdberrmsg(tchdbecode(hdb)));
-        tchdbclose(hdb);
-        tchdbdel(hdb);
+    grist_feature* f = grist_feature_new();
+    f->geom = g;
+    f->attr = tcmapnew();
+
+    if(!grist_db_put(db, k, strlen(k), f)) {
+        report(GRISTMGR_ERR, "could not update %s: %s", k, tchdberrmsg(tchdbecode(db->hdb)));
+        grist_db_close(db);
+        grist_db_del(db);
         exit(EXIT_FAILURE);
     }
 
-    tcmapdel(map);
-    free(packed);
-
-    tchdbclose(hdb);
-    tchdbdel(hdb);
+    grist_db_close(db);
+    grist_db_del(db);
 
     return 0;
 }
 
 static int doget(char* fname, char* k) {
+
+    if(!k) {
+        report(GRISTMGR_ERR, "missing key");
+        exit(EXIT_FAILURE);
+    }
     
     grist_db* db = grist_db_new();
     if(!grist_db_open(db, fname, HDBOREADER)) {
@@ -264,56 +269,4 @@ static int doget(char* fname, char* k) {
 
     return 0;
 
-}
-
-
-/* util */
-static char* gristmgr_pack_rec(char* wkt, TCMAP* map, size_t* sz) {
-    char* packed = NULL;
-
-    GEOSWKTReader* r = GEOSWKTReader_create();
-    GEOSGeometry* g = GEOSWKTReader_read(r, wkt);
-    if(!g) {
-        report(GRISTMGR_ERR, "could not parse wkt geom: %s", wkt);
-        return packed;
-    }
-
-    GEOSWKBWriter* w = GEOSWKBWriter_create();
-    GEOSWKBWriter_setByteOrder(w, GEOS_WKB_XDR);
-
-    size_t pgsz;
-    unsigned char* wkb = GEOSWKBWriter_write(w, g, &pgsz);
-    if(!wkb || !pgsz) {
-        report(GRISTMGR_ERR, "could not write wkb");
-        return packed;
-    }
-
-    int mdsz;
-    char* mapdump = tcmapdump(map, &mdsz);
-    if(!mapdump || !mdsz) {
-        report(GRISTMGR_ERR, "could not dump attributes");
-        return packed;
-    }
-
-    *sz = sizeof(uint64_t)*2 + pgsz + mdsz;
-
-    packed = malloc(*sz);
-    if(!packed) {
-        report(GRISTMGR_ERR, "could not serialize: out of memory");
-        return packed;
-    }
-
-    uint64_t pgsz_ = htonll((uint64_t)pgsz);
-    uint64_t mdsz_ = htonll((uint64_t)mdsz);
-
-    size_t offset = 0;
-    memcpy(packed, &pgsz_, sizeof(uint64_t));
-    offset += sizeof(uint64_t);
-    memcpy(packed+offset, &mdsz_, sizeof(uint64_t));
-    offset += sizeof(uint64_t);
-    memcpy(packed+offset, wkb, pgsz);
-    offset += pgsz;
-    memcpy(packed+offset, mapdump, mdsz);
-
-    return packed;
 }
