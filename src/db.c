@@ -100,7 +100,7 @@ void* grist_db_packrec(grist_db* db, grist_feature* f, int* sz) {
 
     int mdsz;
     char* mapdump = tcmapdump(f->attr, &mdsz);
-    if(!mapdump || !mdsz) {
+    if(!mapdump) {
         return packed;
     }
 
