@@ -24,4 +24,7 @@ void* grist_db_packrec(grist_db* db, grist_feature* f, int* sz);
 bool grist_db_put(grist_db* db, const void* kbuf, int ksiz, grist_feature* f);
 grist_feature* grist_db_get(grist_db* db, const void *kbuf, int ksz);
 
+bool grist_db_iterinit(grist_db* db);
+void* grist_db_iternext(grist_db* db, int* ksz);
+
 #endif

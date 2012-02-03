@@ -82,6 +82,7 @@ grist_feature* grist_db_get(grist_db* db, const void* kbuf, int ksiz) {
     f->geom = g;
     f->attr = map;
 
+    free(v);
     return f;
 }
 

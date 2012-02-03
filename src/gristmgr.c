@@ -39,6 +39,7 @@ static int docreate(char* fname);
 static int dostatus(char* fname);
 static int doput(char* fname, char* key, char* wktgeom, char* attrs);
 static int doget(char* fname, char* key);
+static int dolist(char* fname);
 
 int main(int argc, char** argv) {
     
@@ -64,6 +65,9 @@ int main(int argc, char** argv) {
         case GRISTMGR_STAT:
             dostatus(fname);
             break;
+        case GRISTMGR_LIST:
+            dolist(fname);
+            break;
         case GRISTMGR_PUTX:
             doput(fname, rec_key, rec_geom, "");
             break;
@@ -74,6 +78,8 @@ int main(int argc, char** argv) {
             report(GRISTMGR_ERR, "invalid action");
             exit(EXIT_FAILURE);
     }
+
+    free(fname);
 
     finishGEOS();
     return EXIT_SUCCESS;   
@@ -113,6 +119,7 @@ int parseopts(int argc, char** argv) {
         {"brief", no_argument, &verbose_flag, 0},
         {"init", no_argument, &action_flag, GRISTMGR_INIT},
         {"stat", no_argument, &action_flag, GRISTMGR_STAT},
+        {"list", no_argument, &action_flag, GRISTMGR_LIST},
         {"put", no_argument, &action_flag, GRISTMGR_PUTX},
         {"get", no_argument, &action_flag, GRISTMGR_GETX},
         {"key", required_argument, 0, 'k'},
@@ -266,6 +273,42 @@ static int doget(char* fname, char* k) {
         mv = tcmapget(f->attr, mk, mksz, &mvsz);
         printf("%s:\n\t%s\n", mk, mv);
     }
+
+    return 0;
+
+}
+
+int dolist(char* fname) {
+    
+    grist_db* db = grist_db_new();
+    if(!grist_db_open(db, fname, HDBOREADER)) {
+        abort();
+    }
+
+    grist_db_iterinit(db);
+
+    int ksz;
+    char* k;
+    int i = 0;
+    grist_feature* f;
+    char* wkt;
+    GEOSWKTWriter* w = GEOSWKTWriter_create();
+    while((k = grist_db_iternext(db, &ksz))) {
+        f = grist_db_get(db, k, ksz);
+        wkt = GEOSWKTWriter_write(w, f->geom);
+        printf("%d:\t%s, %s\n", ++i, k, wkt);
+        grist_feature_del(f);
+        f = NULL;
+        free(wkt);
+        wkt = NULL;
+        free(k);
+        k = NULL;
+    }
+
+    GEOSWKTWriter_destroy(w);
+
+    grist_db_close(db);
+    grist_db_del(db);
 
     return 0;
 
