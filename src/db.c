@@ -4,6 +4,7 @@
 #include <unistd.h>
 #include <string.h>
 #include <fcntl.h>
+#include <json/json.h>
 #include "db.h"
 #include "feature.h"
 
@@ -53,78 +54,18 @@ grist_feature* grist_db_get(grist_db* db, const void* kbuf, int ksiz) {
         return NULL;
     }
 
-    uint64_t pgsz;
-    memcpy(&pgsz, v, sizeof(uint64_t));
-    uint64_t mdsz;
-    memcpy(&mdsz, v+sizeof(uint64_t), sizeof(uint64_t));
-
-    pgsz = ntohll(pgsz);
-    mdsz = ntohll(mdsz);
-
-    GEOSWKBReader* r = GEOSWKBReader_create();
-
-    GEOSGeometry* g = GEOSWKBReader_read(r, v+(2*sizeof(uint64_t)), pgsz);
-    GEOSWKBReader_destroy(r);
-
-    if(!g) {
-        free(v);
-        return NULL;
-    }
-
-    TCMAP* map = tcmapload(v+(2*sizeof(uint64_t))+pgsz, mdsz);
-    if(!map) {
-        free(v);
-        GEOSGeom_destroy(g);
-        return NULL;
-    }
-    
-    grist_feature* f = grist_feature_new();
-    f->geom = g;
-    f->attr = map;
+    grist_feature* f = grist_db_unpackrec(db, v, vsz);
 
     free(v);
     return f;
 }
 
 void* grist_db_packrec(grist_db* db, grist_feature* f, int* sz) {
-    char* packed = NULL;
+    return grist_feature_pack(f, sz);
+}
 
-    GEOSWKBWriter* w = GEOSWKBWriter_create();
-    GEOSWKBWriter_setByteOrder(w, GEOS_WKB_XDR);
-
-    size_t pgsz;
-    unsigned char* wkb = GEOSWKBWriter_write(w, f->geom, &pgsz);
-    if(!wkb || !pgsz) {
-        return packed;
-    }
-
-    int mdsz;
-    char* mapdump = tcmapdump(f->attr, &mdsz);
-    if(!mapdump) {
-        return packed;
-    }
-
-    packed = malloc(*sz);
-    if(!packed) {
-        return packed;
-    }
-
-    uint64_t pgsz_ = htonll((uint64_t)pgsz);
-    uint64_t mdsz_ = htonll((uint64_t)mdsz);
-
-    size_t offset = 0;
-    memcpy(packed, &pgsz_, sizeof(uint64_t));
-    offset += sizeof(uint64_t);
-    memcpy(packed+offset, &mdsz_, sizeof(uint64_t));
-    offset += sizeof(uint64_t);
-    memcpy(packed+offset, wkb, pgsz);
-    offset += pgsz;
-    memcpy(packed+offset, mapdump, mdsz);
-
-    *sz = sizeof(uint64_t)*2 + pgsz + mdsz;
-
-    return packed;
-
+grist_feature* grist_db_unpackrec(grist_db* db, void* v, int vsz) {
+    return grist_feature_unpack(v, vsz);
 }
 
 bool grist_db_iterinit(grist_db* db) {

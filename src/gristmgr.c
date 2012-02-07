@@ -6,6 +6,7 @@
 #include <getopt.h>
 #include <tchdb.h>
 #include <geos_c.h>
+#include <json/json.h>
 #include "util.h"
 #include "db.h"
 
@@ -28,6 +29,7 @@ static int verbose_flag = 0;
 static int action_flag = 0;
 static char* rec_key = NULL;
 static char* rec_geom = NULL;
+static char* rec_json = NULL;
 
 static int gristmgr_pid = 0;
 
@@ -69,7 +71,7 @@ int main(int argc, char** argv) {
             dolist(fname);
             break;
         case GRISTMGR_PUTX:
-            doput(fname, rec_key, rec_geom, "");
+            doput(fname, rec_key, rec_geom, rec_json);
             break;
         case GRISTMGR_GETX:
             doget(fname, rec_key);
@@ -124,6 +126,7 @@ int parseopts(int argc, char** argv) {
         {"get", no_argument, &action_flag, GRISTMGR_GETX},
         {"key", required_argument, 0, 'k'},
         {"geom", required_argument, 0, 'g'},
+        {"json", required_argument, 0, 'j'},
         {NULL, 0, NULL, 0}
     };
 
@@ -136,6 +139,7 @@ int parseopts(int argc, char** argv) {
 
         int ksz;
         int gsz;
+        int jsz;
 
         switch(c) {
             case 0:
@@ -151,6 +155,12 @@ int parseopts(int argc, char** argv) {
                 rec_geom = malloc(gsz+1);
                 strncpy(rec_geom, optarg, gsz);
                 rec_geom[gsz] = '\0';
+                break;
+            case 'j':
+                jsz = strlen(optarg);
+                rec_json = malloc(jsz+1);
+                strncpy(rec_json, optarg, jsz);
+                rec_json[jsz] = '\0';
                 break;
             default:
                 usage();
@@ -224,7 +234,7 @@ static int doput(char* fname, char* k, char* wkt, char* attrs) {
 
     grist_feature* f = grist_feature_new();
     f->geom = g;
-    f->attr = tcmapnew();
+    f->data = json_tokener_parse(attrs);
 
     if(!grist_db_put(db, k, strlen(k), f)) {
         report(GRISTMGR_ERR, "could not update %s: %s", k, tchdberrmsg(tchdbecode(db->hdb)));
@@ -264,7 +274,7 @@ static int doget(char* fname, char* k) {
 
     printf("%s @ %s\n", k, wkt);
 
-    tcmapiterinit(f->attr);
+    /*tcmapiterinit(f->attr);
     const char* mk;
     int mksz;
     const char* mv;
@@ -272,7 +282,7 @@ static int doget(char* fname, char* k) {
     while((mk = tcmapiternext(f->attr, &mksz))) {
         mv = tcmapget(f->attr, mk, mksz, &mvsz);
         printf("%s:\n\t%s\n", mk, mv);
-    }
+    }*/
 
     return 0;
 
@@ -296,7 +306,7 @@ int dolist(char* fname) {
     while((k = grist_db_iternext(db, &ksz))) {
         f = grist_db_get(db, k, ksz);
         wkt = GEOSWKTWriter_write(w, f->geom);
-        printf("%d:\t%s, %s\n", ++i, k, wkt);
+        printf("%d:\t%s, %s, %s\n", ++i, k, wkt, f->data ? json_object_to_json_string(f->data): NULL);
         grist_feature_del(f);
         f = NULL;
         free(wkt);

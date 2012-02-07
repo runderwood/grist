@@ -21,6 +21,7 @@ bool grist_db_close(grist_db* db);
 void grist_db_del(grist_db* db);
 
 void* grist_db_packrec(grist_db* db, grist_feature* f, int* sz);
+grist_feature* grist_db_unpackrec(grist_db* db, void* v, int vsz);
 bool grist_db_put(grist_db* db, const void* kbuf, int ksiz, grist_feature* f);
 grist_feature* grist_db_get(grist_db* db, const void *kbuf, int ksz);
 
