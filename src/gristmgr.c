@@ -4,10 +4,8 @@
 #include <stdio.h>
 #include <string.h>
 #include <getopt.h>
-#include <tchdb.h>
 #include <geos_c.h>
 #include <json/json.h>
-#include "util.h"
 #include "db.h"
 
 #define GRISTMGR_DEBUG 1
@@ -27,64 +25,55 @@
 
 static int verbose_flag = 0;
 static int action_flag = 0;
-static char* rec_key = NULL;
-static char* rec_geom = NULL;
-static char* rec_json = NULL;
 
 static int gristmgr_pid = 0;
 
 /* private function prototypes */
-void report(int mtype, char* msg, ...);
-void usage();
-int parseopts(int argc, char** argv);
-static int docreate(char* fname);
-static int dostatus(char* fname);
-static int doput(char* fname, char* key, char* wktgeom, char* attrs);
-static int doget(char* fname, char* key);
-static int dolist(char* fname);
+static void report(int mtype, char* msg, ...);
+static void usage();
+static int parseopts(int argc, const char** argv);
+static int docreate(int argc, const char** argv);
+static int dostatus(int argc, const char** argv);
+static int doput(int argc, const char** argv);
+static int doget(int argc, const char** argv);
+static int dolist(int argc, const char** argv);
 
-int main(int argc, char** argv) {
+int main(int argc, const char** argv) {
     
     gristmgr_pid = getpid();
 
     initGEOS((GEOSMessageHandler)printf, (GEOSMessageHandler)printf);
 
-    int optind = parseopts(argc, argv);
-    if(optind >= argc) {
+    if(!parseopts(argc, argv)) {
         usage();
         exit(EXIT_FAILURE);
     }
 
-    int fnamesz = strlen(argv[argc-1])+1;
-    char* fname = malloc(fnamesz);
-    strcpy(fname, argv[argc-1]);
-    fname[fnamesz-1] = '\0';
-
     switch(action_flag) {
         case GRISTMGR_INIT:
-            docreate(fname);
+            docreate(argc, argv);
             break;
         case GRISTMGR_STAT:
-            dostatus(fname);
+            dostatus(argc, argv);
             break;
         case GRISTMGR_LIST:
-            dolist(fname);
+            dolist(argc, argv);
             break;
         case GRISTMGR_PUTX:
-            doput(fname, rec_key, rec_geom, rec_json);
+            doput(argc, argv);
             break;
         case GRISTMGR_GETX:
-            doget(fname, rec_key);
+            doget(argc, argv);
             break;
         default:
             report(GRISTMGR_ERR, "invalid action");
             exit(EXIT_FAILURE);
     }
 
-    free(fname);
+    //free(fname);
 
     finishGEOS();
-    return EXIT_SUCCESS;   
+    return EXIT_SUCCESS;
 }
 
 void report(int mtype, char* msg, ...) {
@@ -101,120 +90,85 @@ void report(int mtype, char* msg, ...) {
 
 void usage() {
     fprintf(stderr, "gristmgr v0.01\n\nusage: gristmgr <options ...> dbfilename\n\n");
-    fprintf(stderr, "\t--verbose\t\t\tverbose mode\n");
-    fprintf(stderr, "\t--brief\t\t\t\tbrief mode\n");
-    fprintf(stderr, "\t--init\t\t\t\tinitialize database\n");
-    fprintf(stderr, "\t--stat\t\t\t\tdb status\n");
-    fprintf(stderr, "\t--list\t\t\t\tlist features\n");
-    fprintf(stderr, "\t--geom\t\t\t\tWKT geometry\n");
-    fprintf(stderr, "\t--key\t\t\t\tkey of record to manipulate\n");
-    fprintf(stderr, "\n");
+    fprintf(stderr, "\tinit path\n");
+    fprintf(stderr, "\tstat path\n");
+    fprintf(stderr, "\tlist [-pv] path\n");
+    fprintf(stderr, "\tput path key value\n");
+    fprintf(stderr, "\tget path [-wb|-js|-gj|-wt] key\n");
+    fprintf(stderr, "\tdel path key\n");
+    fprintf(stderr, "\tmkview path view [-lu|-js] script\n");
+    fprintf(stderr, "\trmview path view\n");
+    fprintf(stderr, "\tvget path view key\n");
+    fprintf(stderr, "\tversion\n");
+    fprintf(stderr, "\thelp\n");
     return;
 }
 
-int parseopts(int argc, char** argv) {
-    
-    int c;
-    
-    static struct option lopts[] = {
-        {"verbose", no_argument, &verbose_flag, 1},
-        {"brief", no_argument, &verbose_flag, 0},
-        {"init", no_argument, &action_flag, GRISTMGR_INIT},
-        {"stat", no_argument, &action_flag, GRISTMGR_STAT},
-        {"list", no_argument, &action_flag, GRISTMGR_LIST},
-        {"put", no_argument, &action_flag, GRISTMGR_PUTX},
-        {"get", no_argument, &action_flag, GRISTMGR_GETX},
-        {"key", required_argument, 0, 'k'},
-        {"geom", required_argument, 0, 'g'},
-        {"json", required_argument, 0, 'j'},
-        {NULL, 0, NULL, 0}
-    };
-
-    while(1) {
-        int opt_idx = 0;
-
-        c = getopt_long(argc, argv, "", lopts, &opt_idx);
-
-        if(c == -1) break;
-
-        int ksz;
-        int gsz;
-        int jsz;
-
-        switch(c) {
-            case 0:
-                break;
-            case 'k':
-                ksz = strlen(optarg);
-                rec_key = malloc(ksz+1);
-                strncpy(rec_key, optarg, ksz);
-                rec_key[ksz] = '\0';
-                break;
-            case 'g':
-                gsz = strlen(optarg);
-                rec_geom = malloc(gsz+1);
-                strncpy(rec_geom, optarg, gsz);
-                rec_geom[gsz] = '\0';
-                break;
-            case 'j':
-                jsz = strlen(optarg);
-                rec_json = malloc(jsz+1);
-                strncpy(rec_json, optarg, jsz);
-                rec_json[jsz] = '\0';
-                break;
-            default:
-                usage();
-                abort();
-                break;
-        }
-
+static int parseopts(int argc, const char** argv) {
+    if(!strcmp(argv[1], "init")) {
+        action_flag = GRISTMGR_INIT;
+    } else if(!strcmp(argv[1], "stat")) {
+        action_flag = GRISTMGR_STAT;
+    } else if(!strcmp(argv[1], "list")) {
+        action_flag = GRISTMGR_LIST;
+    } else if(!strcmp(argv[1], "put")) {
+        action_flag = GRISTMGR_PUTX;
+    } else if(!strcmp(argv[1], "get")) {
+        action_flag = GRISTMGR_GETX;
     }
-
-    return optind;
+    return action_flag;
 }
 
-static int docreate(char* fname) {
-    TCHDB* hdb = tchdbnew();
-    if(!tchdbtune(hdb, 32, -1, -1, HDBTLARGE | HDBTBZIP)) {
-        tchdbdel(hdb);
-        report(GRISTMGR_ERR, "could not tune db: %s", fname);
-        exit(EXIT_FAILURE);
-    }
-    if(!tchdbopen(hdb, fname, HDBOWRITER | HDBOCREAT)) {
-        tchdbdel(hdb);
+static int docreate(int argc, const char** argv) {
+    if(argc<3) goto opterr;
+    const char* fname = argv[2];
+    grist_db* db = grist_db_new();
+    if(!grist_db_open(db, fname, BDBOWRITER|BDBOCREAT)) {
+        grist_db_del(db);
         report(GRISTMGR_ERR, "could not open db: %s", fname);
         exit(EXIT_FAILURE);
     }
-    tchdbclose(hdb);
-    tchdbdel(hdb);
-    hdb = NULL;
+    grist_db_close(db);
+    grist_db_del(db);
+    db = NULL;
     return 0;
+
+    opterr:
+        finishGEOS();
+        usage();
+        return EXIT_FAILURE;
 }
 
-static int dostatus(char* fname) {
-    TCHDB* hdb = tchdbnew();
-    if(!tchdbopen(hdb, fname, HDBOREADER)) {
-        tchdbdel(hdb);
+static int dostatus(int argc, const char** argv) {
+    if(argc<3) goto opterr;
+    const char* fname = argv[2];
+    grist_db* db = grist_db_new();
+    if(!grist_db_open(db, fname, BDBOREADER)) {
+        grist_db_del(db);
+        db = NULL;
         report(GRISTMGR_ERR, "could not open db: %s", fname);
         exit(EXIT_FAILURE);
     }
-    const char* dbpath = tchdbpath(hdb);
-    if(!dbpath) dbpath = "(unknown)";
-    printf("path: %s\n", dbpath);
-    printf("feature count: %llu\n", (long long unsigned)tchdbrnum(hdb));
-    printf("file size: %llu\n", (long long unsigned)tchdbfsiz(hdb));
-    tchdbclose(hdb);
-    tchdbdel(hdb);
-    hdb = NULL;
+    printf("path: %s\n", fname);
+    printf("feature count: %llu\n", (long long unsigned)grist_db_fcount(db));
+    printf("file size: %llu\n", (long long unsigned)grist_db_filesz(db));
+    grist_db_close(db);
+    grist_db_del(db);
+    db = NULL;
     return 0;
+
+    opterr:
+        usage();
+        return EXIT_FAILURE;
 }
 
-static int doput(char* fname, char* k, char* wkt, char* attrs) {
+static int doput(int argc, const char** argv) {
+    if(argc<6) goto opterr;
 
-    if(!k || !wkt || !attrs) {
-        report(GRISTMGR_ERR, "missing arg");
-        exit(EXIT_FAILURE);
-    }
+    const char* fname = argv[2];
+    const char* k = argv[3];
+    const char* wkt = argv[4];
+    const char* attrs = argv[5];
 
     grist_db* db = grist_db_new();
 
@@ -236,8 +190,15 @@ static int doput(char* fname, char* k, char* wkt, char* attrs) {
     f->geom = g;
     f->data = json_tokener_parse(attrs);
 
+    if(!f->data) {
+        report(GRISTMGR_ERR, "could not parse attrs: %s", attrs);
+        grist_db_close(db);
+        grist_db_del(db);
+        exit(EXIT_FAILURE);
+    }
+
     if(!grist_db_put(db, k, strlen(k), f)) {
-        report(GRISTMGR_ERR, "could not update %s: %s", k, tchdberrmsg(tchdbecode(db->hdb)));
+        report(GRISTMGR_ERR, "could not update %s: %s", k, grist_db_errmsg(db));
         grist_db_close(db);
         grist_db_del(db);
         exit(EXIT_FAILURE);
@@ -245,11 +206,22 @@ static int doput(char* fname, char* k, char* wkt, char* attrs) {
 
     grist_db_close(db);
     grist_db_del(db);
+    db = NULL;
 
+    report(GRISTMGR_INF, "ok.");
     return 0;
+
+    opterr:
+        usage();
+        return EXIT_FAILURE;
 }
 
-static int doget(char* fname, char* k) {
+static int doget(int argc, const char** argv) {
+    
+    if(argc<6) goto opterr;
+
+    const char* fname = argv[2];
+    const char* k = argv[3];
 
     if(!k) {
         report(GRISTMGR_ERR, "missing key");
@@ -286,16 +258,30 @@ static int doget(char* fname, char* k) {
 
     return 0;
 
+    opterr:
+        usage();
+        return EXIT_FAILURE;
 }
 
-int dolist(char* fname) {
+int dolist(int argc, const char** argv) {
+    if(argc<2) goto opterr;
+
+    const char* fname = argv[2];
     
     grist_db* db = grist_db_new();
     if(!grist_db_open(db, fname, HDBOREADER)) {
         abort();
     }
 
-    grist_db_iterinit(db);
+    if(!grist_db_fcount(db)) {
+        report(GRISTMGR_INF, "empty db.");
+        return EXIT_SUCCESS;
+    }
+
+    BDBCUR* cur = grist_db_curnew(db);
+    if(!cur) {
+        abort();
+    }
 
     int ksz;
     char* k;
@@ -303,17 +289,20 @@ int dolist(char* fname) {
     grist_feature* f;
     char* wkt;
     GEOSWKTWriter* w = GEOSWKTWriter_create();
-    while((k = grist_db_iternext(db, &ksz))) {
+    do {
+        k = grist_db_curkey(cur, &ksz);
+        if(!k) break;
         f = grist_db_get(db, k, ksz);
         wkt = GEOSWKTWriter_write(w, f->geom);
-        printf("%d:\t%s, %s, %s\n", ++i, k, wkt, f->data ? json_object_to_json_string(f->data): NULL);
+        printf("%s\t%s\t%s\n", k, wkt, f->data ? json_object_to_json_string(f->data): NULL);
         grist_feature_del(f);
         f = NULL;
         free(wkt);
         wkt = NULL;
         free(k);
         k = NULL;
-    }
+        ++i;
+    } while(grist_db_curnext(cur));
 
     GEOSWKTWriter_destroy(w);
 
@@ -322,4 +311,8 @@ int dolist(char* fname) {
 
     return 0;
 
+    opterr:
+        usage();
+        return EXIT_FAILURE;
 }
+

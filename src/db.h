@@ -1,7 +1,7 @@
 #ifndef GRIST_DB_H
 #define GRIST_DB_H
 
-#include <tchdb.h>
+#include <tcbdb.h>
 #include "util.h"
 #include "feature.h"
 
@@ -12,7 +12,7 @@
 #define GRIST_DB_MAGICSZ 8
 
 typedef struct grist_db_s {
-    TCHDB* hdb;
+    TCBDB* bdb;
 } grist_db;
 
 grist_db* grist_db_new(void);
@@ -25,7 +25,13 @@ grist_feature* grist_db_unpackrec(grist_db* db, void* v, int vsz);
 bool grist_db_put(grist_db* db, const void* kbuf, int ksiz, grist_feature* f);
 grist_feature* grist_db_get(grist_db* db, const void *kbuf, int ksz);
 
-bool grist_db_iterinit(grist_db* db);
-void* grist_db_iternext(grist_db* db, int* ksz);
+BDBCUR* grist_db_curnew(grist_db* db);
+bool grist_db_curnext(BDBCUR* cur);
+void* grist_db_curkey(BDBCUR* cur, int* ksz);
+
+uint64_t grist_db_fcount(grist_db* db);
+uint64_t grist_db_filesz(grist_db* db);
+
+const char* grist_db_errmsg(grist_db* db);
 
 #endif

@@ -10,21 +10,22 @@
 
 grist_db* grist_db_new(void) {
     grist_db* db = malloc(sizeof(grist_db));
-    db->hdb = tchdbnew();
+    db->bdb = tcbdbnew();
     return db;
 }
 
 bool grist_db_open(grist_db* db, const char* fname, int omode) {
-    return tchdbopen(db->hdb, fname, omode);
+    assert(tcbdbtune(db->bdb, -1, -1, -1, -1, -1, BDBTLARGE|BDBTBZIP));
+    return tcbdbopen(db->bdb, fname, omode);
 }
 
 bool grist_db_close(grist_db* db) {
-    return tchdbclose(db->hdb);
+    return tcbdbclose(db->bdb);
 }
 
 void grist_db_del(grist_db* db) {
     assert(db);
-    tchdbdel(db->hdb);
+    tcbdbdel(db->bdb);
     free(db);
     db = NULL;
     return;
@@ -32,13 +33,13 @@ void grist_db_del(grist_db* db) {
 
 bool grist_db_put(grist_db* db, const void* kbuf, int ksiz, grist_feature* f) {
 
-    int packedsz;
+    int packedsz = 0;
     char* packed = grist_db_packrec(db, f, &packedsz);
-    if(!packed) {
+    if(!packed || !packedsz) {
         return false;
     }
 
-    if(!tchdbput(db->hdb, kbuf, ksiz, packed, packedsz)) {
+    if(!tcbdbput(db->bdb, kbuf, ksiz, packed, packedsz)) {
         return false;
     }
 
@@ -49,7 +50,7 @@ grist_feature* grist_db_get(grist_db* db, const void* kbuf, int ksiz) {
     
     int vsz;
 
-    void* v = tchdbget(db->hdb, kbuf, ksiz, &vsz);
+    void* v = tcbdbget(db->bdb, kbuf, ksiz, &vsz);
     if(!v) {
         return NULL;
     }
@@ -68,10 +69,31 @@ grist_feature* grist_db_unpackrec(grist_db* db, void* v, int vsz) {
     return grist_feature_unpack(v, vsz);
 }
 
-bool grist_db_iterinit(grist_db* db) {
-    return tchdbiterinit(db->hdb);
+BDBCUR* grist_db_curnew(grist_db* db) {
+    BDBCUR* cur = tcbdbcurnew(db->bdb);
+    assert(cur);
+    tcbdbcurfirst(cur);
+    return cur;
 }
 
-void* grist_db_iternext(grist_db* db, int* szp) {
-    return tchdbiternext(db->hdb, szp);
+bool grist_db_curnext(BDBCUR* cur) {
+    return tcbdbcurnext(cur);
+}
+
+void* grist_db_curkey(BDBCUR* cur, int* szp) {
+    return tcbdbcurkey(cur, szp);
+}
+
+uint64_t grist_db_fcount(grist_db* db) {
+    return tcbdbrnum(db->bdb);
+}
+
+uint64_t grist_db_filesz(grist_db* db) {
+    return tcbdbfsiz(db->bdb);
+}
+
+const char* grist_db_errmsg(grist_db* db) {
+    int ecode = tcbdbecode(db->bdb);
+    if(!ecode) return NULL;
+    return tcbdberrmsg(ecode);
 }

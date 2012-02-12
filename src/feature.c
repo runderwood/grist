@@ -6,6 +6,8 @@
 #include "feature.h"
 #include "util.h"
 
+#include <stdio.h>
+
 grist_feature* grist_feature_new(void) {
     grist_feature* f = malloc(sizeof(grist_feature));
     f->geom = NULL;
@@ -39,6 +41,7 @@ void* grist_feature_pack(const grist_feature* f, int* sz) {
     }
     int pdsz = strlen(datadump);
 
+    *sz = sizeof(uint64_t)*2 + pgsz + pdsz;
     packed = malloc(*sz);
     if(!packed) {
         return packed;
@@ -55,8 +58,6 @@ void* grist_feature_pack(const grist_feature* f, int* sz) {
     memcpy(packed+offset, wkb, pgsz);
     offset += pgsz;
     memcpy(packed+offset, datadump, pdsz);
-
-    *sz = sizeof(uint64_t)*2 + pgsz + pdsz;
 
     return packed;
 
