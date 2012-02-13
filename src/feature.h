@@ -12,5 +12,6 @@ void grist_feature_del(grist_feature* f);
 
 void* grist_feature_pack(const grist_feature* f, int* sz);
 grist_feature* grist_feature_unpack(const void* v, int vsz);
+const char* grist_feature_tojson(grist_feature* f);
 
 #endif

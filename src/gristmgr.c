@@ -6,6 +6,7 @@
 #include <getopt.h>
 #include <geos_c.h>
 #include <json/json.h>
+#include <js/jsapi.h>
 #include "db.h"
 
 #define GRISTMGR_DEBUG 1
@@ -22,6 +23,7 @@
 #define GRISTMGR_UNSE 6
 #define GRISTMGR_STAT 7
 #define GRISTMGR_LIST 8
+#define GRISTMGR_EVAL 9
 
 static int verbose_flag = 0;
 static int action_flag = 0;
@@ -37,6 +39,7 @@ static int dostatus(int argc, const char** argv);
 static int doput(int argc, const char** argv);
 static int doget(int argc, const char** argv);
 static int dolist(int argc, const char** argv);
+static int doeval(int argc, const char** argv);
 
 int main(int argc, const char** argv) {
     
@@ -44,7 +47,7 @@ int main(int argc, const char** argv) {
 
     initGEOS((GEOSMessageHandler)printf, (GEOSMessageHandler)printf);
 
-    if(!parseopts(argc, argv)) {
+    if(argc < 2 || !parseopts(argc, argv)) {
         usage();
         exit(EXIT_FAILURE);
     }
@@ -64,6 +67,9 @@ int main(int argc, const char** argv) {
             break;
         case GRISTMGR_GETX:
             doget(argc, argv);
+            break;
+        case GRISTMGR_EVAL:
+            doeval(argc, argv);
             break;
         default:
             report(GRISTMGR_ERR, "invalid action");
@@ -96,6 +102,7 @@ void usage() {
     fprintf(stderr, "\tput path key value\n");
     fprintf(stderr, "\tget path [-wb|-js|-gj|-wt] key\n");
     fprintf(stderr, "\tdel path key\n");
+    fprintf(stderr, "\teval path script\n");
     fprintf(stderr, "\tmkview path view [-lu|-js] script\n");
     fprintf(stderr, "\trmview path view\n");
     fprintf(stderr, "\tvget path view key\n");
@@ -115,6 +122,8 @@ static int parseopts(int argc, const char** argv) {
         action_flag = GRISTMGR_PUTX;
     } else if(!strcmp(argv[1], "get")) {
         action_flag = GRISTMGR_GETX;
+    } else if(!strcmp(argv[1], "eval")) {
+        action_flag = GRISTMGR_EVAL;
     }
     return action_flag;
 }
@@ -218,7 +227,7 @@ static int doput(int argc, const char** argv) {
 
 static int doget(int argc, const char** argv) {
     
-    if(argc<6) goto opterr;
+    if(argc<3) goto opterr;
 
     const char* fname = argv[2];
     const char* k = argv[3];
@@ -238,23 +247,9 @@ static int doget(int argc, const char** argv) {
         abort();
     }
 
-    GEOSWKTWriter* w = GEOSWKTWriter_create();
-    char* wkt = GEOSWKTWriter_write(w, f->geom);
-    if(!wkt) {
-        abort();
-    }
+    const char* fjson = grist_feature_tojson(f);
 
-    printf("%s @ %s\n", k, wkt);
-
-    /*tcmapiterinit(f->attr);
-    const char* mk;
-    int mksz;
-    const char* mv;
-    int mvsz;
-    while((mk = tcmapiternext(f->attr, &mksz))) {
-        mv = tcmapget(f->attr, mk, mksz, &mvsz);
-        printf("%s:\n\t%s\n", mk, mv);
-    }*/
+    printf("%s\n", fjson);
 
     return 0;
 
@@ -263,7 +258,7 @@ static int doget(int argc, const char** argv) {
         return EXIT_FAILURE;
 }
 
-int dolist(int argc, const char** argv) {
+static int dolist(int argc, const char** argv) {
     if(argc<2) goto opterr;
 
     const char* fname = argv[2];
@@ -287,24 +282,22 @@ int dolist(int argc, const char** argv) {
     char* k;
     int i = 0;
     grist_feature* f;
-    char* wkt;
-    GEOSWKTWriter* w = GEOSWKTWriter_create();
     do {
         k = grist_db_curkey(cur, &ksz);
         if(!k) break;
         f = grist_db_get(db, k, ksz);
-        wkt = GEOSWKTWriter_write(w, f->geom);
-        printf("%s\t%s\t%s\n", k, wkt, f->data ? json_object_to_json_string(f->data): NULL);
-        grist_feature_del(f);
-        f = NULL;
-        free(wkt);
-        wkt = NULL;
+        //fjson = grist_feature_tojson(f);
+        //printf("%s\t%s\n", k, fjson);
+        //free(fjson);
+        //fjson = NULL;
+        //grist_feature_del(f);
+        //f = NULL;
+        //todo: optional doc printing
+        printf("%s\n", k);
         free(k);
         k = NULL;
         ++i;
     } while(grist_db_curnext(cur));
-
-    GEOSWKTWriter_destroy(w);
 
     grist_db_close(db);
     grist_db_del(db);
@@ -316,3 +309,29 @@ int dolist(int argc, const char** argv) {
         return EXIT_FAILURE;
 }
 
+static int doeval(int argc, const char** argv) {
+    if(argc<5) goto opterr;
+
+    const char* fname = argv[2];
+    const char* key = argv[3];
+    const char* script = argv[4];
+
+    grist_db* db = grist_db_new();
+    if(!grist_db_open(db, fname, HDBOREADER)) {
+        abort();
+    }
+
+    grist_db_jsinit(db);
+
+    int sz;
+    const char* rjson = grist_db_jscall(db, "map", key, strlen(key), &sz);
+
+    printf("%s\n", rjson);
+
+
+    return EXIT_SUCCESS;
+    
+    opterr:
+        usage();
+        return EXIT_FAILURE;
+}

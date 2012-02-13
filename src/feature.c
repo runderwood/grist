@@ -110,3 +110,13 @@ grist_feature* grist_feature_unpack(const void* v, int vsz) {
 
     return f;
 }
+
+const char* grist_feature_tojson(grist_feature* f) {
+    json_object* fjsobj = json_object_new_object();
+    GEOSWKTWriter* w = GEOSWKTWriter_create();
+    const char* wkt = GEOSWKTWriter_write(w, f->geom); // todo: geojson here.
+    json_object* gstr = json_object_new_string(wkt);
+    json_object_object_add(fjsobj, "geom", gstr);
+    json_object_object_add(fjsobj, "attr", f->data);
+    return json_object_to_json_string(fjsobj);
+}

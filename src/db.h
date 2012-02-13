@@ -2,6 +2,7 @@
 #define GRIST_DB_H
 
 #include <tcbdb.h>
+#include <js/jsapi.h>
 #include "util.h"
 #include "feature.h"
 
@@ -13,6 +14,9 @@
 
 typedef struct grist_db_s {
     TCBDB* bdb;
+    JSRuntime* jsruntime;
+    JSContext* jscontext;
+    JSObject* jsglobal;
 } grist_db;
 
 grist_db* grist_db_new(void);
@@ -33,5 +37,8 @@ uint64_t grist_db_fcount(grist_db* db);
 uint64_t grist_db_filesz(grist_db* db);
 
 const char* grist_db_errmsg(grist_db* db);
+
+bool grist_db_jsinit(grist_db* db);
+const char* grist_db_evaljs(grist_db* db, void* k, int ksz, char* doc, int docsz);
 
 #endif

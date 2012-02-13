@@ -5,12 +5,16 @@
 #include <string.h>
 #include <fcntl.h>
 #include <json/json.h>
+#include <js/jsapi.h>
 #include "db.h"
 #include "feature.h"
 
 grist_db* grist_db_new(void) {
     grist_db* db = malloc(sizeof(grist_db));
     db->bdb = tcbdbnew();
+    db->jsruntime = NULL;
+    db->jscontext = NULL;
+    db->jsglobal = NULL;
     return db;
 }
 
@@ -26,6 +30,8 @@ bool grist_db_close(grist_db* db) {
 void grist_db_del(grist_db* db) {
     assert(db);
     tcbdbdel(db->bdb);
+    if(db->jscontext) JS_DestroyContext(db->jscontext);
+    if(db->jsruntime) JS_DestroyRuntime(db->jsruntime);
     free(db);
     db = NULL;
     return;
@@ -96,4 +102,46 @@ const char* grist_db_errmsg(grist_db* db) {
     int ecode = tcbdbecode(db->bdb);
     if(!ecode) return NULL;
     return tcbdberrmsg(ecode);
+}
+
+static JSClass global_class = {
+    "global", JSCLASS_GLOBAL_FLAGS,
+    JS_PropertyStub, JS_PropertyStub, JS_PropertyStub, JS_StrictPropertyStub,
+    JS_EnumerateStub, JS_ResolveStub, JS_ConvertStub, JS_FinalizeStub,
+    JSCLASS_NO_OPTIONAL_MEMBERS
+};
+
+bool grist_db_jsinit(grist_db* db) {
+    assert(!db->jsruntime && !db->jscontext && !db->jsglobal);
+    db->jsruntime = JS_NewRuntime(8L * 1024L * 1024L);
+    if(!db->jsruntime) return false;
+    db->jscontext = JS_NewContext(db->jsruntime, 8192);
+    if(!db->jscontext) return false;
+    db->jsglobal = JS_NewCompartmentAndGlobalObject(db->jscontext, &global_class, NULL);
+    if(!db->jsglobal) return false;
+    if(!JS_InitStandardClasses(db->jscontext, db->jsglobal)) return false;
+    return true;
+}
+
+bool grist_db_jsload(grist_db* db, char* src, int srcsz, jsval* rval) {
+    JSBool ok = JS_EvaluateScript(db->jscontext, db->jsglobal, src, srcsz, "<gristdb>", 0, rval);
+    return ok ? true : false;
+}
+
+char* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz, int* rvsz) {
+    assert(db->jsruntime && db->jscontext && db->jsglobal);
+    grist_feature* f = grist_db_get(db, k, ksz);
+    if(!f) return false;
+    const char* fjson = grist_feature_tojson(f);
+    printf("fjson: %s\n", fjson);
+    jsval argval[1];
+    JSONParser* jp = JS_BeginJSONParse(db->jscontext, argval);
+    assert(jp);
+    JSBool ok = JS_ConsumeJSONText(db->jscontext, jp, (const jschar*)fjson, strlen(fjson));
+    JS_FinishJSONParse(db->jscontext, jp, JSVAL_NULL);
+    jsval* rval;
+    ok = JS_CallFunctionName(db->jscontext, db->jsglobal, fxn, 1, argval, rval);
+    char* rjson;
+    ok = JS_Stringify(db->jscontext, rval, NULL, JSVAL_NULL, NULL, rjson);
+    return rjson;
 }
