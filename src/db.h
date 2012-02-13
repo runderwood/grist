@@ -39,6 +39,7 @@ uint64_t grist_db_filesz(grist_db* db);
 const char* grist_db_errmsg(grist_db* db);
 
 bool grist_db_jsinit(grist_db* db);
-const char* grist_db_evaljs(grist_db* db, void* k, int ksz, char* doc, int docsz);
+bool grist_db_jsload(grist_db* db, const char* src, int srcsz, jsval* rval);
+char* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz, int* rvsz);
 
 #endif

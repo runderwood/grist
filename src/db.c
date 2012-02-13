@@ -123,25 +123,50 @@ bool grist_db_jsinit(grist_db* db) {
     return true;
 }
 
-bool grist_db_jsload(grist_db* db, char* src, int srcsz, jsval* rval) {
+bool grist_db_jsload(grist_db* db, const char* src, int srcsz, jsval* rval) {
     JSBool ok = JS_EvaluateScript(db->jscontext, db->jsglobal, src, srcsz, "<gristdb>", 0, rval);
     return ok ? true : false;
+}
+
+typedef struct grist_db_jsonwriter_s {
+    grist_db* db;
+    char* buf;
+} grist_db_jsonwriter;
+
+JSBool _grist_db_jsonwritecb(const jschar *buf, uint32 len, void* data) {
+    grist_db_jsonwriter* w = (grist_db_jsonwriter*)data;
+    grist_db* db = w->db;
+    if(!db || w->buf) return JS_FALSE;
+    JSString* jsstr = JS_NewUCStringCopyN(db->jscontext, buf, len);
+    size_t elen = JS_GetStringEncodingLength(db->jscontext, jsstr);
+    char* wbuf = malloc(elen+1);
+    JS_EncodeStringToBuffer(jsstr, wbuf, len);
+    wbuf[elen] = '\0';
+    w->buf = wbuf;
+    return JS_TRUE;
 }
 
 char* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz, int* rvsz) {
     assert(db->jsruntime && db->jscontext && db->jsglobal);
     grist_feature* f = grist_db_get(db, k, ksz);
-    if(!f) return false;
+    if(!f) return NULL;
     const char* fjson = grist_feature_tojson(f);
-    printf("fjson: %s\n", fjson);
-    jsval argval[1];
-    JSONParser* jp = JS_BeginJSONParse(db->jscontext, argval);
+    jsval parsed;
+    JSONParser* jp = JS_BeginJSONParse(db->jscontext, &parsed);
     assert(jp);
-    JSBool ok = JS_ConsumeJSONText(db->jscontext, jp, (const jschar*)fjson, strlen(fjson));
+    JSString* fjsonjs = JS_NewStringCopyN(db->jscontext, fjson, strlen(fjson));
+    JSBool ok = JS_ConsumeJSONText(db->jscontext, jp, 
+        JS_GetStringCharsZ(db->jscontext, fjsonjs), JS_GetStringLength(fjsonjs));
     JS_FinishJSONParse(db->jscontext, jp, JSVAL_NULL);
-    jsval* rval;
-    ok = JS_CallFunctionName(db->jscontext, db->jsglobal, fxn, 1, argval, rval);
-    char* rjson;
-    ok = JS_Stringify(db->jscontext, rval, NULL, JSVAL_NULL, NULL, rjson);
-    return rjson;
+    jsval rval = JSVAL_NULL;
+    ok = JS_CallFunctionName(db->jscontext, db->jsglobal, fxn, 1, &parsed, &rval);
+    if(!ok) return NULL;
+    grist_db_jsonwriter writer;
+    writer.db = db;
+    writer.buf = NULL;
+    ok = JS_Stringify(db->jscontext, &rval, NULL, JSVAL_ONE, _grist_db_jsonwritecb, &writer);
+    if(!ok) return NULL;
+    *rvsz = strlen(writer.buf);
+    grist_feature_del(f);
+    return writer.buf;
 }

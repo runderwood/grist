@@ -24,6 +24,7 @@
 #define GRISTMGR_STAT 7
 #define GRISTMGR_LIST 8
 #define GRISTMGR_EVAL 9
+#define GRISTMGR_MAPX 10
 
 static int verbose_flag = 0;
 static int action_flag = 0;
@@ -40,6 +41,7 @@ static int doput(int argc, const char** argv);
 static int doget(int argc, const char** argv);
 static int dolist(int argc, const char** argv);
 static int doeval(int argc, const char** argv);
+static int domap(int argc, const char** argv);
 
 int main(int argc, const char** argv) {
     
@@ -70,6 +72,9 @@ int main(int argc, const char** argv) {
             break;
         case GRISTMGR_EVAL:
             doeval(argc, argv);
+            break;
+        case GRISTMGR_MAPX:
+            domap(argc, argv);
             break;
         default:
             report(GRISTMGR_ERR, "invalid action");
@@ -102,7 +107,8 @@ void usage() {
     fprintf(stderr, "\tput path key value\n");
     fprintf(stderr, "\tget path [-wb|-js|-gj|-wt] key\n");
     fprintf(stderr, "\tdel path key\n");
-    fprintf(stderr, "\teval path script\n");
+    fprintf(stderr, "\teval path key script\n");
+    fprintf(stderr, "\tmap path script\n");
     fprintf(stderr, "\tmkview path view [-lu|-js] script\n");
     fprintf(stderr, "\trmview path view\n");
     fprintf(stderr, "\tvget path view key\n");
@@ -124,6 +130,8 @@ static int parseopts(int argc, const char** argv) {
         action_flag = GRISTMGR_GETX;
     } else if(!strcmp(argv[1], "eval")) {
         action_flag = GRISTMGR_EVAL;
+    } else if(!strcmp(argv[1], "map")) {
+        action_flag = GRISTMGR_MAPX;
     }
     return action_flag;
 }
@@ -281,11 +289,11 @@ static int dolist(int argc, const char** argv) {
     int ksz;
     char* k;
     int i = 0;
-    grist_feature* f;
+    //grist_feature* f;
     do {
         k = grist_db_curkey(cur, &ksz);
         if(!k) break;
-        f = grist_db_get(db, k, ksz);
+        //f = grist_db_get(db, k, ksz);
         //fjson = grist_feature_tojson(f);
         //printf("%s\t%s\n", k, fjson);
         //free(fjson);
@@ -314,7 +322,7 @@ static int doeval(int argc, const char** argv) {
 
     const char* fname = argv[2];
     const char* key = argv[3];
-    const char* script = argv[4];
+    const char* scriptnm = argv[4];
 
     grist_db* db = grist_db_new();
     if(!grist_db_open(db, fname, HDBOREADER)) {
@@ -323,11 +331,95 @@ static int doeval(int argc, const char** argv) {
 
     grist_db_jsinit(db);
 
+    FILE* sfp = fopen(scriptnm, "rb");
+    if(!sfp) abort();
+    fseek(sfp, 0, SEEK_END);
+    size_t flen = ftell(sfp);
+    fseek(sfp, 0, SEEK_SET);
+    char* script = malloc(flen+1);
+
+    fread(script, 1, flen, sfp);
+    script[flen] = '\0';
+
+    if(!grist_db_jsload(db, script, strlen(script), NULL)) {
+        report(GRISTMGR_ERR, "could not load script");
+        goto opterr;
+    }
+
     int sz;
-    const char* rjson = grist_db_jscall(db, "map", key, strlen(key), &sz);
+    const char* rjson = grist_db_jscall(db, "map", (void*)key, strlen(key), &sz);
+    if(!rjson) {
+        report(GRISTMGR_ERR, "could not evaluate script");
+        goto opterr;
+    }
 
     printf("%s\n", rjson);
 
+    grist_db_del(db);
+
+    return EXIT_SUCCESS;
+    
+    opterr:
+        usage();
+        return EXIT_FAILURE;
+}
+
+static int domap(int argc, const char** argv) {
+    if(argc<4) goto opterr;
+
+    const char* fname = argv[2];
+    const char* scriptnm = argv[3];
+
+    grist_db* db = grist_db_new();
+    if(!grist_db_open(db, fname, HDBOREADER)) {
+        abort();
+    }
+
+    grist_db_jsinit(db);
+
+    FILE* sfp = fopen(scriptnm, "rb");
+    if(!sfp) abort();
+    fseek(sfp, 0, SEEK_END);
+    size_t flen = ftell(sfp);
+    fseek(sfp, 0, SEEK_SET);
+    char* script = malloc(flen+1);
+
+    fread(script, 1, flen, sfp);
+    script[flen] = '\0';
+
+    if(!grist_db_jsload(db, script, strlen(script), NULL)) {
+        report(GRISTMGR_ERR, "could not load script");
+        goto opterr;
+    }
+
+    int sz;
+    BDBCUR* cur = grist_db_curnew(db);
+    if(!cur) {
+        abort();
+    }
+
+    char* rjson;
+    int ksz;
+    char* k;
+    int i = 0;
+    //grist_feature* f;
+    do {
+        k = grist_db_curkey(cur, &ksz);
+        if(!k) break;
+        rjson = grist_db_jscall(db, "map", (void*)k, strlen(k), &sz);
+        if(!rjson) {
+            report(GRISTMGR_ERR, "could not evaluate script");
+            goto opterr;
+        }
+        printf("%s\n", rjson);
+        free(k);
+        k = NULL;
+        free(rjson);
+        rjson = NULL;
+        ++i;
+    } while(grist_db_curnext(cur));
+
+    grist_db_del(db);
 
     return EXIT_SUCCESS;
     
