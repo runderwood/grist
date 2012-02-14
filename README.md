@@ -4,7 +4,7 @@ The gristmgr program requires libgeos, libtokyocabinet, and libmozjs185.
 
 ## Usage
 
-The gristmgr tool provides management facilities for grist databases usage is as follows:
+The gristmgr tool provides management facilities for grist databases. Usage is as follows:
 
     gristmgr v0.01
     usage: gristmgr cmd [options...] path [params...]
