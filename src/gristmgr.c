@@ -100,7 +100,7 @@ void report(int mtype, char* msg, ...) {
 }
 
 void usage() {
-    fprintf(stderr, "gristmgr v0.01\n\nusage: gristmgr <options ...> dbfilename\n\n");
+    fprintf(stderr, "gristmgr v0.01\nusage: gristmgr cmd [options...] path [params...]\n");
     fprintf(stderr, "\tinit path\n");
     fprintf(stderr, "\tstat path\n");
     fprintf(stderr, "\tlist [-pv] path\n");
