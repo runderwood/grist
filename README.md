@@ -22,6 +22,38 @@ The gristmgr tool provides management facilities for grist databases. Usage is a
         version
         help
 
+### Creating a Database
+
+    >gristmgr init mydatabase.grist
+
+### Database Info
+
+    >gristmgr stat mydatabase.grist
+
+### List Keys
+
+    >gristmgr list mydatabase.grist
+
+### Add a Feature
+
+    >gristmgr put mydatabase.grist myfeature 'POINT (-71.0617 42.3578)' '{"name": "Boston", "nicknames": ["Beantown","St. Botolph\'s Town"]}'
+
+### Get a Feature
+
+    >gristmgr get mydatabase.grist myfeature
+
+### Delete a Feature
+
+    >gristmgr del mydatabase.grist myfeature
+
+### Evaluate a Javascript Function Against a Feature
+
+    >gristmgr eval mydatabase.grist myfeature myjavascript.js
+
+### Map a Javascript Function Against All Features
+
+    >gristmgr map mydatabase.grist myjavascript.js
+
 ## Implementation Details
 
 Grist files consist of features and metadata. A feature is a geometry (libgeos) and a "document" (json-serialized object).
