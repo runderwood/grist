@@ -105,7 +105,7 @@ void usage() {
     fprintf(stderr, "\tinit path\n");
     fprintf(stderr, "\tstat path\n");
     fprintf(stderr, "\tlist [-pv] path\n");
-    fprintf(stderr, "\tput path key value\n");
+    fprintf(stderr, "\tput path [key] wkt-geom json-object\n");
     fprintf(stderr, "\tget path [-wb|-js|-gj|-wt] key\n");
     fprintf(stderr, "\tdel path key\n");
     fprintf(stderr, "\teval path key script\n");

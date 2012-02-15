@@ -11,7 +11,7 @@ The gristmgr tool provides management facilities for grist databases. Usage is a
         init path
         stat path
         list [-pv] path
-        put path key value
+        put path [key] wkt-geom json-object
         get path [-wb|-js|-gj|-wt] key
         del path key
         eval path key script
