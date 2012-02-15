@@ -3,6 +3,7 @@
 #include <assert.h>
 #include <string.h>
 #include <stdio.h>
+#include <tcutil.h>
 
 int is_big_endian(void) {
     static int big_endian = -1;
@@ -61,4 +62,8 @@ double lltod(uint64_t ll) {
     } u;
     u.ull = ll;
     return u.d;
+}
+
+void grist_md5hash(const void* p, int sz, char* buf) {
+    return tcmd5hash(p, sz, buf);
 }

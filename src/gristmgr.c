@@ -8,6 +8,7 @@
 #include <json/json.h>
 #include <js/jsapi.h>
 #include "db.h"
+#include "util.h"
 
 #define GRISTMGR_DEBUG 1
 
@@ -26,7 +27,7 @@
 #define GRISTMGR_EVAL 9
 #define GRISTMGR_MAPX 10
 
-static int verbose_flag = 0;
+static int verbose_flag = 1;
 static int action_flag = 0;
 
 static int gristmgr_pid = 0;
@@ -88,7 +89,7 @@ int main(int argc, const char** argv) {
 }
 
 void report(int mtype, char* msg, ...) {
-    if((mtype & GRISTMGR_ERR) && (GRISTMGR_DEBUG || verbose_flag)) {
+    if((mtype & GRISTMGR_ERR) || (GRISTMGR_DEBUG || verbose_flag)) {
         va_list fmtargs;
         char buf[80];
         va_start(fmtargs, msg);
@@ -180,12 +181,25 @@ static int dostatus(int argc, const char** argv) {
 }
 
 static int doput(int argc, const char** argv) {
-    if(argc<6) goto opterr;
+    if(argc<5) goto opterr;
 
     const char* fname = argv[2];
-    const char* k = argv[3];
+    char k[65];
     const char* wkt = argv[4];
     const char* attrs = argv[5];
+
+    if(argc < 6) {
+        fname = argv[2];
+        wkt = argv[3];
+        attrs = argv[4];
+        k[0] = '\0';
+    } else {
+        fname = argv[2];
+        strncpy(k, argv[3], 64);
+        k[64] = '\0';
+        wkt = argv[4];
+        attrs = argv[5];
+    }
 
     grist_db* db = grist_db_new();
 
@@ -193,6 +207,19 @@ static int doput(int argc, const char** argv) {
         grist_db_del(db);
         report(GRISTMGR_ERR, "could not open db: %s", fname);
         exit(EXIT_FAILURE);
+    }
+
+    if(k[0] == '\0') {
+        grist_feature* f = NULL;
+        srand(time(NULL));
+        int r = 0;
+        do {
+            r = rand();
+            grist_md5hash(&r, sizeof(r), k);
+            k[48] = '\0';
+        } while((f = grist_db_get(db, k, strlen(k))));
+        if(f) grist_feature_del(f);
+        report(GRISTMGR_INF, "generated key: %s", k);
     }
 
     GEOSWKTReader* r = GEOSWKTReader_create();
