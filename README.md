@@ -1,3 +1,20 @@
+## What?
+
+Grist is a set of tools for managing spatial data non-relationally. A Grist database
+is a collection of features of the form:
+
+    {
+        "geom": 'POINT (0.0 0.0)',
+        "attr": {
+
+        },
+        "_rev": "1-4c1cee11d99c19cbc6d762b11f1b5b21"
+    }
+
+...where "geom" is the Well-Known Text geometry, "attr" is the attribute data (or document),
+and "_rev" is the revision (modeled after the CouchDB style of ordinal+md5hash and used for
+conflict resolution, etc.).
+
 ## Dependencies
 
 The gristmgr program requires libgeos, libtokyocabinet, and libmozjs185.
