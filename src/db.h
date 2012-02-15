@@ -11,6 +11,7 @@
 #define GRIST_DB_TYP 0x01
 #define GRIST_DB_MAGIC "GrIsT@@@"
 #define GRIST_DB_MAGICSZ 8
+#define GRIST_DB_REVSZ 48
 
 typedef struct grist_db_s {
     TCBDB* bdb;
@@ -19,15 +20,20 @@ typedef struct grist_db_s {
     JSObject* jsglobal;
 } grist_db;
 
+typedef struct grist_rev_s {
+    uint64_t i;
+    char s[GRIST_DB_REVSZ];
+} grist_rev;
+
 grist_db* grist_db_new(void);
 bool grist_db_open(grist_db* db, const char* fname, int omode);
 bool grist_db_close(grist_db* db);
 void grist_db_del(grist_db* db);
 
-void* grist_db_packrec(grist_db* db, grist_feature* f, int* sz);
-grist_feature* grist_db_unpackrec(grist_db* db, void* v, int vsz);
-bool grist_db_put(grist_db* db, const void* kbuf, int ksiz, grist_feature* f);
-grist_feature* grist_db_get(grist_db* db, const void *kbuf, int ksz);
+void* grist_db_packrec(grist_db* db, grist_feature* f, grist_rev* rev, int* sz);
+grist_feature* grist_db_unpackrec(grist_db* db, void* v, int vsz, grist_rev* rev);
+bool grist_db_put(grist_db* db, const void* kbuf, int ksiz, grist_feature* f, grist_rev* r);
+grist_feature* grist_db_get(grist_db* db, const void *kbuf, int ksz, grist_rev* r);
 
 BDBCUR* grist_db_curnew(grist_db* db);
 bool grist_db_curnext(BDBCUR* cur);
@@ -41,5 +47,6 @@ const char* grist_db_errmsg(grist_db* db);
 bool grist_db_jsinit(grist_db* db);
 bool grist_db_jsload(grist_db* db, const char* src, int srcsz, jsval* rval);
 char* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz, int* rvsz);
+const char* grist_db_feature2json(grist_feature* f, grist_rev* r);
 
 #endif

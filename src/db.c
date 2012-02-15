@@ -37,10 +37,10 @@ void grist_db_del(grist_db* db) {
     return;
 }
 
-bool grist_db_put(grist_db* db, const void* kbuf, int ksiz, grist_feature* f) {
+bool grist_db_put(grist_db* db, const void* kbuf, int ksiz, grist_feature* f, grist_rev* r) {
 
     int packedsz = 0;
-    char* packed = grist_db_packrec(db, f, &packedsz);
+    char* packed = grist_db_packrec(db, f, r, &packedsz);
     if(!packed || !packedsz) {
         return false;
     }
@@ -52,7 +52,7 @@ bool grist_db_put(grist_db* db, const void* kbuf, int ksiz, grist_feature* f) {
     return true;
 }
 
-grist_feature* grist_db_get(grist_db* db, const void* kbuf, int ksiz) {
+grist_feature* grist_db_get(grist_db* db, const void* kbuf, int ksiz, grist_rev* r) {
     
     int vsz;
 
@@ -61,18 +61,34 @@ grist_feature* grist_db_get(grist_db* db, const void* kbuf, int ksiz) {
         return NULL;
     }
 
-    grist_feature* f = grist_db_unpackrec(db, v, vsz);
+    grist_feature* f = grist_db_unpackrec(db, v, vsz, r);
 
     free(v);
     return f;
 }
 
-void* grist_db_packrec(grist_db* db, grist_feature* f, int* sz) {
-    return grist_feature_pack(f, sz);
+void* grist_db_packrec(grist_db* db, grist_feature* f, grist_rev* rev, int* sz) {
+    assert(db && f && sz && rev);
+    int pfsz;
+    void* pf = grist_feature_pack(f, &pfsz);
+    grist_md5hash(pf, pfsz, rev->s);
+    *sz = pfsz + GRIST_DB_REVSZ + sizeof(uint64_t);
+    void* pr = malloc(*sz);
+    uint64_t rev_i_ = htonll(rev->i);
+    memcpy(pr, &rev_i_, sizeof(uint64_t));
+    memcpy(pr+sizeof(uint64_t), rev->s, GRIST_DB_REVSZ);
+    memcpy(pr+sizeof(uint64_t)+GRIST_DB_REVSZ, pf, pfsz);
+    free(pf);
+    return pr;
 }
 
-grist_feature* grist_db_unpackrec(grist_db* db, void* v, int vsz) {
-    return grist_feature_unpack(v, vsz);
+grist_feature* grist_db_unpackrec(grist_db* db, void* v, int vsz, grist_rev* rev) {
+    assert(db && v && vsz > (GRIST_DB_REVSZ+3*sizeof(uint64_t)));
+    uint64_t r_i;
+    memcpy(&r_i, v, sizeof(uint64_t));
+    rev->i = ntohll(r_i);
+    strncpy(rev->s, v+sizeof(uint64_t), GRIST_DB_REVSZ);
+    return grist_feature_unpack(v+sizeof(uint64_t)+GRIST_DB_REVSZ, vsz);
 }
 
 BDBCUR* grist_db_curnew(grist_db* db) {
@@ -148,7 +164,8 @@ JSBool _grist_db_jsonwritecb(const jschar *buf, uint32 len, void* data) {
 
 char* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz, int* rvsz) {
     assert(db->jsruntime && db->jscontext && db->jsglobal);
-    grist_feature* f = grist_db_get(db, k, ksz);
+    grist_rev r;
+    grist_feature* f = grist_db_get(db, k, ksz, &r);
     if(!f) return NULL;
     const char* fjson = grist_feature_tojson(f);
     jsval parsed;
@@ -169,4 +186,20 @@ char* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz, int* rvsz
     *rvsz = strlen(writer.buf);
     grist_feature_del(f);
     return writer.buf;
+}
+
+const char* grist_db_feature2json(grist_feature* f, grist_rev* r) {
+    json_object* fjsobj = json_object_new_object();
+    GEOSWKTWriter* w = GEOSWKTWriter_create();
+    const char* wkt = GEOSWKTWriter_write(w, f->geom); // todo: geojson here.
+    json_object* gstr = json_object_new_string(wkt);
+    json_object_object_add(fjsobj, "geom", gstr);
+    json_object_object_add(fjsobj, "attr", f->data);
+    size_t bufsz = 60;
+    char buf[bufsz];
+    snprintf(buf, bufsz, "%lld-%s", (long long int)r->i, r->s);
+    buf[bufsz-1] = '\0';
+    json_object* rstr = json_object_new_string(buf);
+    json_object_object_add(fjsobj, "_rev", rstr);
+    return json_object_to_json_string(fjsobj);
 }

@@ -209,17 +209,26 @@ static int doput(int argc, const char** argv) {
         exit(EXIT_FAILURE);
     }
 
+    grist_feature* f_ = NULL;
+    grist_rev rev_;
+
     if(k[0] == '\0') {
-        grist_feature* f = NULL;
         srand(time(NULL));
         int r = 0;
         do {
             r = rand();
             grist_md5hash(&r, sizeof(r), k);
             k[48] = '\0';
-        } while((f = grist_db_get(db, k, strlen(k))));
-        if(f) grist_feature_del(f);
+        } while((f_ = grist_db_get(db, k, strlen(k), &rev_)));
+        if(f_) grist_feature_del(f_);
+        f_ = NULL;
         report(GRISTMGR_INF, "generated key: %s", k);
+        rev_.i = 1;
+    } else {
+        f_ = grist_db_get(db, k, strlen(k), &rev_);
+        rev_.i++;
+        grist_feature_del(f_);
+        f_ = NULL;
     }
 
     GEOSWKTReader* r = GEOSWKTReader_create();
@@ -241,7 +250,7 @@ static int doput(int argc, const char** argv) {
         exit(EXIT_FAILURE);
     }
 
-    if(!grist_db_put(db, k, strlen(k), f)) {
+    if(!grist_db_put(db, k, strlen(k), f, &rev_)) {
         report(GRISTMGR_ERR, "could not update %s: %s", k, grist_db_errmsg(db));
         grist_db_close(db);
         grist_db_del(db);
@@ -277,12 +286,13 @@ static int doget(int argc, const char** argv) {
         abort();
     }
 
-    grist_feature* f = grist_db_get(db, k, strlen(k));
+    grist_rev r;
+    grist_feature* f = grist_db_get(db, k, strlen(k), &r);
     if(!f) {
         abort();
     }
 
-    const char* fjson = grist_feature_tojson(f);
+    const char* fjson = grist_db_feature2json(f, &r);
 
     printf("%s\n", fjson);
 
