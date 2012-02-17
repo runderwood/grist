@@ -11,7 +11,7 @@
 grist_feature* grist_feature_new(void) {
     grist_feature* f = malloc(sizeof(grist_feature));
     f->geom = NULL;
-    f->data = NULL;
+    f->attr = NULL;
     assert(f);
     return f;
 }
@@ -24,6 +24,7 @@ void grist_feature_del(grist_feature* f) {
 }
 
 void* grist_feature_pack(const grist_feature* f, int* sz) {
+    assert(f && f->attr && f->geom);
     char* packed = NULL;
 
     GEOSWKBWriter* w = GEOSWKBWriter_create();
@@ -34,8 +35,8 @@ void* grist_feature_pack(const grist_feature* f, int* sz) {
     if(!wkb || !pgsz) {
         return packed;
     }
-    
-    const char* datadump = json_object_to_json_string(f->data);
+
+    const char* datadump = json_object_to_json_string(f->attr);
     if(!datadump) {
         return packed;
     }
@@ -106,17 +107,52 @@ grist_feature* grist_feature_unpack(const void* v, int vsz) {
     
     grist_feature* f = grist_feature_new();
     f->geom = g;
-    f->data = fdata;
+    f->attr = fdata;
 
     return f;
 }
 
-const char* grist_feature_tojson(grist_feature* f) {
+char* grist_feature_tojson(grist_feature* f) {
     json_object* fjsobj = json_object_new_object();
     GEOSWKTWriter* w = GEOSWKTWriter_create();
-    const char* wkt = GEOSWKTWriter_write(w, f->geom); // todo: geojson here.
+    char* wkt = GEOSWKTWriter_write(w, f->geom); // todo: geojson here.
+    GEOSWKTWriter_destroy(w);
     json_object* gstr = json_object_new_string(wkt);
+    free(wkt);
     json_object_object_add(fjsobj, "geom", gstr);
-    json_object_object_add(fjsobj, "attr", f->data);
-    return json_object_to_json_string(fjsobj);
+    json_object_object_add(fjsobj, "attr", f->attr);
+    char* j = (char*)json_object_to_json_string(fjsobj);
+    json_object_object_del(fjsobj, "geom");
+    json_object_object_del(fjsobj, "attr");
+    return j;
+}
+
+grist_feature* grist_feature_fromjson(const char* json) {
+    grist_feature* f = NULL;
+    json_object* jsonobj = json_tokener_parse(json);
+    if(jsonobj) {
+        f = grist_feature_new();
+        json_object* geom = json_object_object_get(jsonobj, "geom");
+        const char* wkt = json_object_get_string(geom);
+        if(wkt) {
+            GEOSWKTReader* r = GEOSWKTReader_create();
+            GEOSGeometry* g = GEOSWKTReader_read(r, wkt);
+            if(g) {
+                f->geom = g;
+                json_object* attr = json_object_get(json_object_object_get(jsonobj, "attr"));
+                if(attr) {
+                    f->attr = attr;
+                } else {
+                    GEOSGeom_destroy(g);
+                    f->geom = NULL;
+                }
+            }
+            GEOSWKTReader_destroy(r);
+        }
+        if(!f->attr || !f->geom) {
+            f = NULL;
+        }
+    }
+    json_object_put(jsonobj);
+    return f;
 }

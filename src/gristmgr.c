@@ -30,8 +30,6 @@
 static int verbose_flag = 1;
 static int action_flag = 0;
 
-static int gristmgr_pid = 0;
-
 /* private function prototypes */
 static void report(int mtype, char* msg, ...);
 static void usage();
@@ -46,14 +44,12 @@ static int domap(int argc, const char** argv);
 
 int main(int argc, const char** argv) {
     
-    gristmgr_pid = getpid();
-
-    initGEOS((GEOSMessageHandler)printf, (GEOSMessageHandler)printf);
-
     if(argc < 2 || !parseopts(argc, argv)) {
         usage();
         exit(EXIT_FAILURE);
     }
+    
+    initGEOS((GEOSMessageHandler)printf, (GEOSMessageHandler)printf);
 
     switch(action_flag) {
         case GRISTMGR_INIT:
@@ -79,6 +75,7 @@ int main(int argc, const char** argv) {
             break;
         default:
             report(GRISTMGR_ERR, "invalid action");
+            finishGEOS();
             exit(EXIT_FAILURE);
     }
 
@@ -203,7 +200,7 @@ static int doput(int argc, const char** argv) {
 
     grist_db* db = grist_db_new();
 
-    if(!grist_db_open(db, fname, HDBOWRITER)) {
+    if(!grist_db_open(db, fname, BDBOWRITER)) {
         grist_db_del(db);
         report(GRISTMGR_ERR, "could not open db: %s", fname);
         exit(EXIT_FAILURE);
@@ -243,9 +240,9 @@ static int doput(int argc, const char** argv) {
 
     grist_feature* f = grist_feature_new();
     f->geom = g;
-    f->data = json_tokener_parse(attrs);
+    f->attr = json_tokener_parse(attrs);
 
-    if(!f->data) {
+    if(!f->attr) {
         report(GRISTMGR_ERR, "could not parse attrs: %s", attrs);
         grist_db_close(db);
         grist_db_del(db);
@@ -284,7 +281,7 @@ static int doget(int argc, const char** argv) {
     }
     
     grist_db* db = grist_db_new();
-    if(!grist_db_open(db, fname, HDBOREADER)) {
+    if(!grist_db_open(db, fname, BDBOREADER)) {
         abort();
     }
 
@@ -294,7 +291,7 @@ static int doget(int argc, const char** argv) {
         abort();
     }
 
-    const char* fjson = grist_db_feature2json(f, &r);
+    char* fjson = grist_db_feature2json(f, &r, (void*)k, strlen(k));
 
     printf("%s\n", fjson);
 
@@ -311,7 +308,7 @@ static int dolist(int argc, const char** argv) {
     const char* fname = argv[2];
     
     grist_db* db = grist_db_new();
-    if(!grist_db_open(db, fname, HDBOREADER)) {
+    if(!grist_db_open(db, fname, BDBOREADER)) {
         abort();
     }
 
@@ -364,14 +361,17 @@ static int doeval(int argc, const char** argv) {
     const char* scriptnm = argv[4];
 
     grist_db* db = grist_db_new();
-    if(!grist_db_open(db, fname, HDBOREADER)) {
+    if(!grist_db_open(db, fname, BDBOREADER)) {
         abort();
     }
 
     grist_db_jsinit(db);
 
     FILE* sfp = fopen(scriptnm, "rb");
-    if(!sfp) abort();
+    if(!sfp) {
+        report(GRISTMGR_ERR, "could not open script: %s", scriptnm);
+        exit(EXIT_FAILURE);
+    }
     fseek(sfp, 0, SEEK_END);
     size_t flen = ftell(sfp);
     fseek(sfp, 0, SEEK_SET);
@@ -384,15 +384,19 @@ static int doeval(int argc, const char** argv) {
         report(GRISTMGR_ERR, "could not load script");
         goto opterr;
     }
+    free(script);
+    fclose(sfp);
 
     int sz;
-    const char* rjson = grist_db_jscall(db, "map", (void*)key, strlen(key), &sz);
+    char* rjson = grist_db_jscalljson(db, "map", (void*)key, strlen(key), &sz);
     if(!rjson) {
         report(GRISTMGR_ERR, "could not evaluate script");
         goto opterr;
     }
 
     printf("%s\n", rjson);
+
+    free(rjson);
 
     grist_db_del(db);
 
@@ -404,13 +408,14 @@ static int doeval(int argc, const char** argv) {
 }
 
 static int domap(int argc, const char** argv) {
-    if(argc<4) goto opterr;
+    if(argc<5) goto opterr;
 
     const char* fname = argv[2];
     const char* scriptnm = argv[3];
+    const char* outnm = argv[4];
 
     grist_db* db = grist_db_new();
-    if(!grist_db_open(db, fname, HDBOREADER)) {
+    if(!grist_db_open(db, fname, BDBOREADER)) {
         abort();
     }
 
@@ -430,6 +435,7 @@ static int domap(int argc, const char** argv) {
         report(GRISTMGR_ERR, "could not load script");
         goto opterr;
     }
+    free(script);
 
     int sz;
     BDBCUR* cur = grist_db_curnew(db);
@@ -437,26 +443,52 @@ static int domap(int argc, const char** argv) {
         abort();
     }
 
+    grist_db* outdb = grist_db_new();
+    if(!grist_db_open(outdb, outnm, BDBOWRITER|BDBOCREAT)) {
+        report(GRISTMGR_ERR, "could not open output db: %s\n", outnm);
+        exit(EXIT_FAILURE);
+    }
+
     char* rjson;
     int ksz;
     char* k;
     int i = 0;
-    //grist_feature* f;
+    grist_rev rev;
+    rev.i = 1;
+    rev.s[0] = '\0';
+    grist_feature* f = NULL;
+    char* jkey = NULL;
     do {
         k = grist_db_curkey(cur, &ksz);
         if(!k) break;
-        rjson = grist_db_jscall(db, "map", (void*)k, strlen(k), &sz);
+        rjson = grist_db_jscalljson(db, "map", (void*)k, strlen(k), &sz);
         if(!rjson) {
             report(GRISTMGR_ERR, "could not evaluate script");
             goto opterr;
         }
-        printf("%s\n", rjson);
+        json_object* rjsonobj = json_tokener_parse(rjson);
+        if(rjsonobj && json_object_is_type(rjsonobj, json_type_object)) {
+            json_object_object_foreach(rjsonobj, key, val) {
+                if(!(jkey = realloc(jkey, strlen(key)+1))) abort();
+                strcpy(jkey, key);
+                jkey[strlen(key)] = '\0';
+                f = grist_feature_fromjson(json_object_to_json_string(val));
+                if(f) {
+                    grist_db_put(outdb, jkey, strlen(jkey), f, &rev);
+                    grist_feature_del(f);
+                    f = NULL;
+                }
+            }
+        }
+        //printf("%s\n", rjson);
         free(k);
         k = NULL;
         free(rjson);
         rjson = NULL;
         ++i;
     } while(grist_db_curnext(cur));
+
+    grist_db_del(outdb);
 
     grist_db_del(db);
 

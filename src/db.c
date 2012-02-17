@@ -68,9 +68,10 @@ grist_feature* grist_db_get(grist_db* db, const void* kbuf, int ksiz, grist_rev*
 }
 
 void* grist_db_packrec(grist_db* db, grist_feature* f, grist_rev* rev, int* sz) {
-    assert(db && f && sz && rev);
+    assert(db && f && f->geom && f->attr && sz && rev);
     int pfsz;
     void* pf = grist_feature_pack(f, &pfsz);
+    assert(pf);
     grist_md5hash(pf, pfsz, rev->s);
     *sz = pfsz + GRIST_DB_REVSZ + sizeof(uint64_t);
     void* pr = malloc(*sz);
@@ -162,12 +163,13 @@ JSBool _grist_db_jsonwritecb(const jschar *buf, uint32 len, void* data) {
     return JS_TRUE;
 }
 
-char* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz, int* rvsz) {
+jsval* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz) {
     assert(db->jsruntime && db->jscontext && db->jsglobal);
     grist_rev r;
     grist_feature* f = grist_db_get(db, k, ksz, &r);
     if(!f) return NULL;
-    const char* fjson = grist_feature_tojson(f);
+    //char* fjson = grist_feature_tojson(f);
+    char* fjson = grist_db_feature2json(f, &r, k, ksz); 
     jsval parsed;
     JSONParser* jp = JS_BeginJSONParse(db->jscontext, &parsed);
     assert(jp);
@@ -175,31 +177,49 @@ char* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz, int* rvsz
     JSBool ok = JS_ConsumeJSONText(db->jscontext, jp, 
         JS_GetStringCharsZ(db->jscontext, fjsonjs), JS_GetStringLength(fjsonjs));
     JS_FinishJSONParse(db->jscontext, jp, JSVAL_NULL);
-    jsval rval = JSVAL_NULL;
-    ok = JS_CallFunctionName(db->jscontext, db->jsglobal, fxn, 1, &parsed, &rval);
+    jsval* rval = malloc(sizeof(jsval));
+    *rval = JSVAL_NULL;
+    ok = JS_CallFunctionName(db->jscontext, db->jsglobal, fxn, 1, &parsed, rval);
     if(!ok) return NULL;
+    grist_feature_del(f);
+    free(fjson);
+    return rval;
+}
+
+char* grist_db_jscalljson(grist_db* db, const char* fxn, void* k, int ksz, int* jsz) {
+    jsval* rval = grist_db_jscall(db, fxn, k, ksz);
+    if(!rval) return NULL;
     grist_db_jsonwriter writer;
     writer.db = db;
     writer.buf = NULL;
-    ok = JS_Stringify(db->jscontext, &rval, NULL, JSVAL_ONE, _grist_db_jsonwritecb, &writer);
+    JSBool ok = JS_Stringify(db->jscontext, rval, NULL, JSVAL_ONE, _grist_db_jsonwritecb, &writer);
     if(!ok) return NULL;
-    *rvsz = strlen(writer.buf);
-    grist_feature_del(f);
+    *jsz = strlen(writer.buf);
+    free(rval);
     return writer.buf;
 }
 
-const char* grist_db_feature2json(grist_feature* f, grist_rev* r) {
+char* grist_db_feature2json(grist_feature* f, grist_rev* r, void* key, int ksz) {
     json_object* fjsobj = json_object_new_object();
     GEOSWKTWriter* w = GEOSWKTWriter_create();
-    const char* wkt = GEOSWKTWriter_write(w, f->geom); // todo: geojson here.
+    const char* wkt = GEOSWKTWriter_write(w, f->geom);
+    GEOSWKTWriter_destroy(w);
     json_object* gstr = json_object_new_string(wkt);
     json_object_object_add(fjsobj, "geom", gstr);
-    json_object_object_add(fjsobj, "attr", f->data);
+    json_object_object_add(fjsobj, "attr", f->attr);
     size_t bufsz = 60;
     char buf[bufsz];
     snprintf(buf, bufsz, "%lld-%s", (long long int)r->i, r->s);
     buf[bufsz-1] = '\0';
     json_object* rstr = json_object_new_string(buf);
     json_object_object_add(fjsobj, "_rev", rstr);
-    return json_object_to_json_string(fjsobj);
+    if(key && ksz > 0) {
+        char* kstr = malloc(ksz+1);
+        strncpy(kstr, key, ksz);
+        kstr[ksz] = '\0';
+        json_object* kjstr = json_object_new_string(kstr);
+        free(kstr);
+        json_object_object_add(fjsobj, "_key", kjstr);
+    }
+    return (char*)json_object_to_json_string(fjsobj);
 }

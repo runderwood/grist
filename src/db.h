@@ -46,7 +46,8 @@ const char* grist_db_errmsg(grist_db* db);
 
 bool grist_db_jsinit(grist_db* db);
 bool grist_db_jsload(grist_db* db, const char* src, int srcsz, jsval* rval);
-char* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz, int* rvsz);
-const char* grist_db_feature2json(grist_feature* f, grist_rev* r);
+jsval* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz);
+char* grist_db_jscalljson(grist_db* db, const char* fxn, void* k, int ksz, int* rvsz);
+char* grist_db_feature2json(grist_feature* f, grist_rev* r, void* k, int ksz);
 
 #endif
