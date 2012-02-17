@@ -226,9 +226,11 @@ static int doput(int argc, const char** argv) {
         rev_.i = 1;
     } else {
         f_ = grist_db_get(db, k, strlen(k), &rev_);
-        rev_.i++;
-        grist_feature_del(f_);
-        f_ = NULL;
+        if(f_) {
+            rev_.i++;
+            grist_feature_del(f_);
+            f_ = NULL;
+        } else rev_.i = 1;
     }
 
     GEOSWKTReader* r = GEOSWKTReader_create();
