@@ -26,6 +26,7 @@
 #define GRISTMGR_LIST 8
 #define GRISTMGR_EVAL 9
 #define GRISTMGR_MAPX 10
+#define GRISTMGR_LOAD 11
 
 static int verbose_flag = 1;
 static int action_flag = 0;
@@ -41,6 +42,7 @@ static int doget(int argc, const char** argv);
 static int dolist(int argc, const char** argv);
 static int doeval(int argc, const char** argv);
 static int domap(int argc, const char** argv);
+static int doload(int argc, const char** argv);
 
 int main(int argc, const char** argv) {
     
@@ -72,6 +74,9 @@ int main(int argc, const char** argv) {
             break;
         case GRISTMGR_MAPX:
             domap(argc, argv);
+            break;
+        case GRISTMGR_LOAD:
+            doload(argc, argv);
             break;
         default:
             report(GRISTMGR_ERR, "invalid action");
@@ -107,6 +112,7 @@ void usage() {
     fprintf(stderr, "\tdel path key\n");
     fprintf(stderr, "\teval path key script\n");
     fprintf(stderr, "\tmap path script\n");
+    fprintf(stderr, "\tload path jsonfile\n");
     fprintf(stderr, "\tmkview path view [-lu|-js] script\n");
     fprintf(stderr, "\trmview path view\n");
     fprintf(stderr, "\tvget path view key\n");
@@ -130,6 +136,8 @@ static int parseopts(int argc, const char** argv) {
         action_flag = GRISTMGR_EVAL;
     } else if(!strcmp(argv[1], "map")) {
         action_flag = GRISTMGR_MAPX;
+    } else if(!strcmp(argv[1], "load")) {
+        action_flag = GRISTMGR_LOAD;
     }
     return action_flag;
 }
@@ -494,6 +502,62 @@ static int domap(int argc, const char** argv) {
 
     return EXIT_SUCCESS;
     
+    opterr:
+        usage();
+        return EXIT_FAILURE;
+}
+
+static int doload(int argc, const char** argv) {
+    if(argc<4) goto opterr;
+
+    const char* fname = argv[2];
+    const char* inname = argv[3];
+
+    FILE* dfp = fopen(inname, "rb");
+    if(!dfp) {
+        report(GRISTMGR_ERR, "could not open data file: %s", inname);
+        exit(EXIT_FAILURE);
+    }
+    fseek(dfp, 0, SEEK_END);
+    size_t flen = ftell(dfp);
+    fseek(dfp, 0, SEEK_SET);
+    char* data = malloc(flen+1);
+
+    fread(data, 1, flen, dfp);
+    data[flen] = '\0';
+
+    grist_db* db = grist_db_new();
+    if(!grist_db_open(db, fname, BDBOWRITER)) {
+        report(GRISTMGR_ERR, "could not open db: %s", fname);
+        goto opterr;
+    }
+
+    json_object* jso = json_tokener_parse(data);
+
+    grist_feature* f = NULL;
+    grist_rev r;
+    r.i = 1;
+
+    if(jso && json_object_is_type(jso, json_type_object)) {
+        json_object_object_foreach(jso, key, val) {
+            f = grist_feature_fromjson(json_object_to_json_string(val));
+            if(f) {
+                grist_db_put(db, key, strlen(key), f, &r);    
+                grist_feature_del(f);
+            }
+            f = NULL;
+        }
+    } else {
+        report(GRISTMGR_ERR, "could not parse json");
+        goto opterr;
+    }
+
+
+    free(data);
+    grist_db_del(db);
+
+    return EXIT_SUCCESS;
+
     opterr:
         usage();
         return EXIT_FAILURE;

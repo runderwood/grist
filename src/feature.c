@@ -146,7 +146,7 @@ grist_feature* grist_feature_fromjson(const char* json) {
                     GEOSGeom_destroy(g);
                     f->geom = NULL;
                 }
-            }
+            } 
             GEOSWKTReader_destroy(r);
         }
         if(!f->attr || !f->geom) {
