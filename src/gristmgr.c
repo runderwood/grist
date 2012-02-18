@@ -477,6 +477,7 @@ static int domap(int argc, const char** argv) {
         json_object* rjsonobj = json_tokener_parse(rjson);
         if(rjsonobj && json_object_is_type(rjsonobj, json_type_object)) {
             json_object_object_foreach(rjsonobj, key, val) {
+                if(!json_object_is_type(val, json_type_object)) continue;
                 if(!(jkey = realloc(jkey, strlen(key)+1))) abort();
                 strcpy(jkey, key);
                 jkey[strlen(key)] = '\0';

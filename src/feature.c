@@ -133,6 +133,11 @@ grist_feature* grist_feature_fromjson(const char* json) {
     if(jsonobj) {
         f = grist_feature_new();
         json_object* geom = json_object_object_get(jsonobj, "geom");
+        if(!geom) {
+            grist_feature_del(f);
+            f = NULL;
+            return f;
+        }
         const char* wkt = json_object_get_string(geom);
         if(wkt) {
             GEOSWKTReader* r = GEOSWKTReader_create();
