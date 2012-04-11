@@ -15,9 +15,9 @@
 
 typedef struct grist_db_s {
     TCBDB* bdb;
-    JSRuntime* jsruntime;
-    JSContext* jscontext;
-    JSObject* jsglobal;
+    JSRuntime* jsrt;
+    JSContext* jscx;
+    JSObject* jsglob;
 } grist_db;
 
 typedef struct grist_rev_s {

@@ -12,9 +12,9 @@
 grist_db* grist_db_new(void) {
     grist_db* db = malloc(sizeof(grist_db));
     db->bdb = tcbdbnew();
-    db->jsruntime = NULL;
-    db->jscontext = NULL;
-    db->jsglobal = NULL;
+    db->jsrt = NULL;
+    db->jscx = NULL;
+    db->jsglob = NULL;
     return db;
 }
 
@@ -30,8 +30,8 @@ bool grist_db_close(grist_db* db) {
 void grist_db_del(grist_db* db) {
     assert(db);
     tcbdbdel(db->bdb);
-    if(db->jscontext) JS_DestroyContext(db->jscontext);
-    if(db->jsruntime) JS_DestroyRuntime(db->jsruntime);
+    if(db->jscx) JS_DestroyContext(db->jscx);
+    if(db->jsrt) JS_DestroyRuntime(db->jsrt);
     free(db);
     db = NULL;
     return;
@@ -129,19 +129,19 @@ static JSClass global_class = {
 };
 
 bool grist_db_jsinit(grist_db* db) {
-    assert(!db->jsruntime && !db->jscontext && !db->jsglobal);
-    db->jsruntime = JS_NewRuntime(8L * 1024L * 1024L);
-    if(!db->jsruntime) return false;
-    db->jscontext = JS_NewContext(db->jsruntime, 8192);
-    if(!db->jscontext) return false;
-    db->jsglobal = JS_NewCompartmentAndGlobalObject(db->jscontext, &global_class, NULL);
-    if(!db->jsglobal) return false;
-    if(!JS_InitStandardClasses(db->jscontext, db->jsglobal)) return false;
+    assert(!db->jsrt && !db->jscx && !db->jsglob);
+    db->jsrt = JS_NewRuntime(8L * 1024L * 1024L);
+    if(!db->jsrt) return false;
+    db->jscx = JS_NewContext(db->jsrt, 8192);
+    if(!db->jscx) return false;
+    db->jsglob = JS_NewCompartmentAndGlobalObject(db->jscx, &global_class, NULL);
+    if(!db->jsglob) return false;
+    if(!JS_InitStandardClasses(db->jscx, db->jsglob)) return false;
     return true;
 }
 
 bool grist_db_jsload(grist_db* db, const char* src, int srcsz, jsval* rval) {
-    JSBool ok = JS_EvaluateScript(db->jscontext, db->jsglobal, src, srcsz, "<gristdb>", 0, rval);
+    JSBool ok = JS_EvaluateScript(db->jscx, db->jsglob, src, srcsz, "<gristdb>", 0, rval);
     return ok ? true : false;
 }
 
@@ -154,8 +154,8 @@ JSBool _grist_db_jsonwritecb(const jschar *buf, uint32 len, void* data) {
     grist_db_jsonwriter* w = (grist_db_jsonwriter*)data;
     grist_db* db = w->db;
     if(!db || w->buf) return JS_FALSE;
-    JSString* jsstr = JS_NewUCStringCopyN(db->jscontext, buf, len);
-    size_t elen = JS_GetStringEncodingLength(db->jscontext, jsstr);
+    JSString* jsstr = JS_NewUCStringCopyN(db->jscx, buf, len);
+    size_t elen = JS_GetStringEncodingLength(db->jscx, jsstr);
     char* wbuf = malloc(elen+1);
     JS_EncodeStringToBuffer(jsstr, wbuf, len);
     wbuf[elen] = '\0';
@@ -164,22 +164,22 @@ JSBool _grist_db_jsonwritecb(const jschar *buf, uint32 len, void* data) {
 }
 
 jsval* grist_db_jscall(grist_db* db, const char* fxn, void* k, int ksz) {
-    assert(db->jsruntime && db->jscontext && db->jsglobal);
+    assert(db->jsrt && db->jscx && db->jsglob);
     grist_rev r;
     grist_feature* f = grist_db_get(db, k, ksz, &r);
     if(!f) return NULL;
     //char* fjson = grist_feature_tojson(f);
     char* fjson = grist_db_feature2json(f, &r, k, ksz); 
     jsval parsed;
-    JSONParser* jp = JS_BeginJSONParse(db->jscontext, &parsed);
+    JSONParser* jp = JS_BeginJSONParse(db->jscx, &parsed);
     assert(jp);
-    JSString* fjsonjs = JS_NewStringCopyN(db->jscontext, fjson, strlen(fjson));
-    JSBool ok = JS_ConsumeJSONText(db->jscontext, jp, 
-        JS_GetStringCharsZ(db->jscontext, fjsonjs), JS_GetStringLength(fjsonjs));
-    JS_FinishJSONParse(db->jscontext, jp, JSVAL_NULL);
+    JSString* fjsonjs = JS_NewStringCopyN(db->jscx, fjson, strlen(fjson));
+    JSBool ok = JS_ConsumeJSONText(db->jscx, jp, 
+        JS_GetStringCharsZ(db->jscx, fjsonjs), JS_GetStringLength(fjsonjs));
+    JS_FinishJSONParse(db->jscx, jp, JSVAL_NULL);
     jsval* rval = malloc(sizeof(jsval));
     *rval = JSVAL_NULL;
-    ok = JS_CallFunctionName(db->jscontext, db->jsglobal, fxn, 1, &parsed, rval);
+    ok = JS_CallFunctionName(db->jscx, db->jsglob, fxn, 1, &parsed, rval);
     if(!ok) return NULL;
     grist_feature_del(f);
     free(fjson);
@@ -192,21 +192,22 @@ char* grist_db_jscalljson(grist_db* db, const char* fxn, void* k, int ksz, int* 
     grist_db_jsonwriter writer;
     writer.db = db;
     writer.buf = NULL;
-    JSBool ok = JS_Stringify(db->jscontext, rval, NULL, JSVAL_ONE, _grist_db_jsonwritecb, &writer);
+    JSBool ok = JS_Stringify(db->jscx, rval, NULL, JSVAL_ONE, _grist_db_jsonwritecb, &writer);
     if(!ok) return NULL;
     *jsz = strlen(writer.buf);
     free(rval);
     return writer.buf;
 }
 
-char* grist_db_feature2json(grist_feature* f, grist_rev* r, void* key, int ksz) {
-    json_object* fjsobj = json_object_new_object();
+char* grist_db_feature2json(grist_db* db, grist_feature* f, grist_rev* r, void* key, int ksz) {
     GEOSWKTWriter* w = GEOSWKTWriter_create();
     const char* wkt = GEOSWKTWriter_write(w, f->geom);
     GEOSWKTWriter_destroy(w);
-    json_object* gstr = json_object_new_string(wkt);
-    json_object_object_add(fjsobj, "geom", gstr);
-    json_object_object_add(fjsobj, "attr", f->attr);
+    JS_Object* jso = JS_NewObject(db->context, NULL, NULL, NULL);
+    assert(JSVAL_IS_OBJECT(jso));
+    JSString* jwkt = JS_NewStringCopyN(db->jscx, wkt, strlen(wkt));
+    JS_SetProperty(db->jscx, jso, "geom", jwkt);
+    JS_SetProperty(db->jscx, jso, "attr", jwkt);
     size_t bufsz = 60;
     char buf[bufsz];
     snprintf(buf, bufsz, "%lld-%s", (long long int)r->i, r->s);
@@ -222,4 +223,18 @@ char* grist_db_feature2json(grist_feature* f, grist_rev* r, void* key, int ksz) 
         json_object_object_add(fjsobj, "_key", kjstr);
     }
     return (char*)json_object_to_json_string(fjsobj);
+}
+
+int grist_db_parsejson(grist_db* db, char* s, int sz, jsval *v) {
+    assert(db && db->jscx && v);
+    JSString* jstr = JS_NewStringCopyN(db->jscx, s, sz);
+    JSONParser* jp = JS_BeginJSONParse(db->jscx, v);
+    JSBool ok = JS_ConsumeJSONText(db->jscx, jp, 
+        JS_GetStringCharsZ(db->jscx, jstr), JS_GetStringLength(jstr));
+    JS_FinishJSONParse(db->jscx, jp, JSVAL_NULL);
+    if(!ok) {
+        v = NULL;
+        return -1;
+    }
+    return 0;
 }
